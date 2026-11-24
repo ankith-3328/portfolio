@@ -44,7 +44,7 @@
   <a class="skip-link" href="#about">Skip to content</a>
 
   <div class="scroll-progress" aria-hidden="true"></div>
-  <div class="cursor" aria-hidden="true"><span class="cursor-dot"></span><span class="cursor-ring"></span></div>
+  <div class="cursor" aria-hidden="true"><span class="cursor-dot"></span></div>
 
   <header class="site-header">
     <nav class="nav" aria-label="Sections">
@@ -89,10 +89,10 @@
         <p>Away from the keyboard I swim (selected for NSO), roller skate, and solve 25+ Rubik’s cube variants, which is why the cube on this page solves itself as you read.</p>
       </div>
       <dl class="facts reveal">
-        <div><dt>9.13</dt><dd>CGPA at IIT Madras</dd></div>
-        <div><dt>3rd</dt><dd>in department, 70+ students</dd></div>
-        <div><dt>1st</dt><dd>HiLabs AI Quest 2026, 100+ teams</dd></div>
-        <div><dt>25+</dt><dd>cube variants solved</dd></div>
+        <div class="tile"><dt>9.13</dt><dd>CGPA at IIT Madras</dd></div>
+        <div class="tile"><dt>3rd</dt><dd>in department, 70+ students</dd></div>
+        <div class="tile"><dt>1st</dt><dd>HiLabs AI Quest 2026, 100+ teams</dd></div>
+        <div class="tile"><dt>25+</dt><dd>cube variants solved</dd></div>
       </dl>
     </section>
 
@@ -101,38 +101,47 @@
       <p class="eyebrow reveal">02 · F2L</p>
       <h2 id="exp-title" class="reveal">Experience</h2>
 
-      <ol class="timeline">
-        <li class="role reveal">
-          <div class="role-head">
-            <h3>HiLabs</h3>
-            <span class="when">Incoming</span>
+      <ol class="exp-list">
+        <!-- Incoming full-time role -->
+        <li class="card exp-card exp-card--next reveal" style="--d: 0ms">
+          <div class="exp-head">
+            <div>
+              <h3 class="exp-company">HiLabs</h3>
+              <p class="exp-role">AI Engineer <span class="exp-note">Full-time</span></p>
+            </div>
+            <p class="exp-status"><span class="live-dot" aria-hidden="true"></span>Incoming</p>
           </div>
-          <p class="role-title">AI Engineer</p>
         </li>
 
-        <li class="role reveal">
-          <div class="role-head">
-            <h3>Appian <span class="badge">PPO offered</span></h3>
-            <span class="when">Jun – Jul 2026</span>
+        <li class="card exp-card reveal" style="--d: 90ms">
+          <div class="exp-head">
+            <div>
+              <h3 class="exp-company">Appian</h3>
+              <p class="exp-role">Software Development Engineer Intern <span class="exp-note exp-note--accent">PPO offered</span></p>
+            </div>
+            <p class="exp-when"><time datetime="2026-06">Jun</time> – <time datetime="2026-07">Jul 2026</time></p>
           </div>
-          <p class="role-title">Software Development Engineer Intern</p>
-          <ul>
-            <li>Owned and delivered the <strong>Release Tags</strong> feature (Java, SAIL, Spring, Hibernate) for 60+ customers.</li>
+          <ul class="exp-points">
+            <li>Owned and delivered the Release Tags feature for <b class="num">60+</b> customers.</li>
             <li>Extended XSD schemas and DTOs to embed release metadata, removing redundant data fetches across workflows.</li>
-            <li>Drove a <strong>48% increase</strong> in Compare &amp; Deploy usage (27 → 40 sites).</li>
+            <li>Drove a <b class="num">48%</b> increase in Compare &amp; Deploy usage (<b class="num">27 → 40</b> sites).</li>
           </ul>
+          <p class="exp-stack"><span class="sr-only">Technologies: </span>Java · SAIL · Spring · Hibernate</p>
         </li>
 
-        <li class="role reveal">
-          <div class="role-head">
-            <h3>Elektrobit</h3>
-            <span class="when">Jun – Jul 2025</span>
+        <li class="card exp-card reveal" style="--d: 180ms">
+          <div class="exp-head">
+            <div>
+              <h3 class="exp-company">Elektrobit</h3>
+              <p class="exp-role">Software Development Engineer Intern</p>
+            </div>
+            <p class="exp-when"><time datetime="2025-06">Jun</time> – <time datetime="2025-07">Jul 2025</time></p>
           </div>
-          <p class="role-title">Software Development Engineer Intern</p>
-          <ul>
+          <ul class="exp-points">
             <li>Built RESTful APIs with Spring Boot and MongoDB for backend data processing.</li>
-            <li>Built a <strong>RAG chatbot</strong> (LangChain, ChromaDB, Ollama) that answers employee questions from 50+ indexed PDFs using MiniLM embeddings.</li>
+            <li>Built a RAG chatbot that answers employee questions from <b class="num">50+</b> indexed PDFs using MiniLM embeddings.</li>
           </ul>
+          <p class="exp-stack"><span class="sr-only">Technologies: </span>Spring Boot · MongoDB · LangChain · ChromaDB · Ollama · MiniLM</p>
         </li>
       </ol>
     </section>
@@ -202,10 +211,10 @@
       </div>
 
       <dl class="facts achievements reveal">
-        <div><dt>99.29</dt><dd>percentile<br>JEE Main 2023</dd></div>
-        <div><dt>AIR 5612</dt><dd>JEE Advanced<br>2023</dd></div>
-        <div><dt>210</dt><dd>state rank<br>KCET 2023</dd></div>
-        <div><dt>1000+</dt><dd>LeetCode problems<br>peak rating 1623</dd></div>
+        <div class="tile"><dt>99.29</dt><dd>percentile<br>JEE Main 2023</dd></div>
+        <div class="tile"><dt>AIR 5612</dt><dd>JEE Advanced<br>2023</dd></div>
+        <div class="tile"><dt>210</dt><dd>state rank<br>KCET 2023</dd></div>
+        <div class="tile"><dt>1000+</dt><dd>LeetCode problems<br>peak rating 1623</dd></div>
       </dl>
     </section>
 
@@ -214,7 +223,7 @@
       <p class="eyebrow reveal">05 · Solved</p>
       <h2 id="contact-title" class="reveal">Solved.</h2>
       <p class="lede reveal">The cube’s done. If you’re building something with backends or LLMs, I’d like to hear about it.</p>
-      <div class="mail-card reveal">
+      <div class="mail-card">
         <a class="mail-link" href="mailto:ankithcs3328@gmail.com">
           <span class="mini-cube" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
           <span class="mail-text">

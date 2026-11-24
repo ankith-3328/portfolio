@@ -62,7 +62,20 @@ function roundedSquare(size, radius) {
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const smooth = (t) => t * t * (3 - 2 * t);
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
-const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeInCubic = (t) => t * t * t;
+const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+
+// How open the lid is (0 = shut, 1 = open) at time t of the flourish
+function lidOpen(t) {
+  if (t < OPEN_END) return easeOutBack(t / OPEN_END);
+  if (t < CLOSE_START) return 1;
+  if (t < CLOSE_END) return 1 - easeInCubic((t - CLOSE_START) / (CLOSE_END - CLOSE_START));
+  if (t < SETTLE_END) {
+    const k = (t - CLOSE_END) / (SETTLE_END - CLOSE_END);
+    return 0.07 * Math.sin(Math.PI * k) * (1 - k); // small bounce as it lands
+  }
+  return 0;
+}
 
 // Intro timing: layers build bottom → middle → top, pieces go around each layer
 const INTRO_LAYER_GAP = 0.42;  // seconds between layers
@@ -70,14 +83,15 @@ const INTRO_PIECE_GAP = 0.045; // seconds between pieces within a layer
 const INTRO_FLIGHT = 0.75;     // seconds for one piece to drop into place
 const INTRO_DROP = 4.5;        // how far above its spot a piece starts
 
-// Victory flourish timing
-const WAVE_DELAY = 0.16;       // seconds between the top, middle and bottom layer spins
-const WAVE_SPIN = 0.95;        // seconds for one layer's full turn
-const RIPPLE_START = 0.62;     // when the first ring leaves the base (after the hop lands)
-const RIPPLE_TIME = 1.5;       // how long a ring takes to expand and fade
-const GLINT_START = 1.05;      // when the stickers catch the light
-const CELEBRATION_LENGTH = 2.6;
-const ACCENT = 0xC96442;
+// Victory flourish: the top layer hinges open like a lid, the email pops out, the lid closes
+const OPEN_END = 0.32;          // lid fully open
+export const LAUNCH_AT = 0.26;  // the email leaves through the gap (seconds after solving)
+const CLOSE_START = 0.85;       // lid starts closing
+const CLOSE_END = 1.12;         // lid shut
+const SETTLE_END = 1.35;        // tiny bounce after it shuts
+const LID_ANGLE = 0.6;          // how far the lid tips open (radians, ~34°)
+const LID_LIFT = 0.12;          // and how much it rises
+const CELEBRATION_LENGTH = 1.4;
 // Scroll turns: smooth each quarter-turn and leave a short pause between moves
 const scrollEase = (t) => smooth(clamp01((t - 0.12) / 0.76));
 
@@ -97,8 +111,8 @@ export class RubiksCube {
     this.introTime = intro ? 0 : Infinity;
     this.introLength = this.#planIntro();
     this.celebration = Infinity; // seconds since the last "solved" flourish
+    this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
-    this.#buildRipples();
 
     this.setProgress(0);
   }
@@ -107,7 +121,7 @@ export class RubiksCube {
     const bodyGeo = new RoundedBoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE, 4, 0.09);
     const bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.6, metalness: 0.05 });
     const stickerGeo = roundedSquare(STICKER_SIZE, 0.13);
-    const stickerMats = this.stickerMats = Object.fromEntries(
+    const stickerMats = Object.fromEntries(
       Object.entries(STICKER_COLORS).map(([face, color]) => [
         face,
         new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0 }),
@@ -198,50 +212,16 @@ export class RubiksCube {
   }
 
   // ---------- Theatre ----------
-  celebrate() { this.celebration = 0; }
-
-  // Two thin rings under the cube that ripple outward when it's solved
-  #buildRipples() {
-    const geo = new THREE.RingGeometry(1, 1.035, 128);
-    this.ripples = [0, 0.28].map((offset) => {
-      const mat = new THREE.MeshBasicMaterial({
-        color: ACCENT, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
-      });
-      const ring = new THREE.Mesh(geo, mat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = -1.62;
-      ring.visible = false;
-      ring.userData.offset = offset;
-      this.object.add(ring);
-      return ring;
-    });
-  }
-
-  #updateFlourish() {
-    const t = this.celebration;
-
-    // Ripples
-    for (const ring of this.ripples) {
-      const k = (t - RIPPLE_START - ring.userData.offset) / RIPPLE_TIME;
-      ring.visible = !this.calm && k > 0 && k < 1;
-      if (!ring.visible) continue;
-      ring.scale.setScalar(1.6 + 3.4 * easeOutQuart(k));
-      ring.material.opacity = 0.55 * (1 - k) * (1 - k);
-    }
-
-    // Glint: stickers briefly light up
-    const g = (t - (this.calm ? 0 : GLINT_START)) / 0.7;
-    const glow = g > 0 && g < 1 ? Math.sin(Math.PI * g) * 0.07 : 0;
-    for (const mat of Object.values(this.stickerMats)) {
-      mat.emissive.setRGB(glow, glow * 0.93, glow * 0.85);
-    }
+  // towardViewer: direction from the cube to the camera, in the cube's own coordinates
+  celebrate(towardViewer) {
+    this.celebration = 0;
+    if (towardViewer) this.lidToward.set(towardViewer.x, 0, towardViewer.z).normalize();
   }
 
   tick(dt) {
     if (this.introTime !== Infinity) this.introTime += dt;
     if (this.celebration !== Infinity) {
       this.celebration += dt;
-      this.#updateFlourish();
       if (this.celebration > CELEBRATION_LENGTH) this.celebration = Infinity;
     }
   }
@@ -252,11 +232,18 @@ export class RubiksCube {
       ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], angleOf(moving) * amount)
       : null;
 
-    // "Breathing" apart when solved: up to 18% wider gaps, for ~1 second
-    // Victory flourish: a small hop, and each layer (top → bottom) spins a full turn
+    // Victory flourish: the top layer tips open on a hinge along its far edge
     const t = this.celebration;
-    const flourish = !this.calm && t < CELEBRATION_LENGTH;
-    this.object.position.y = flourish && t < 0.7 ? 0.22 * Math.sin(Math.PI * (t / 0.7)) : 0;
+    const open = !this.calm && t < CELEBRATION_LENGTH ? lidOpen(t) : 0;
+    let lid = null;
+    if (open !== 0) {
+      const d = this.lidToward;
+      lid = {
+        pivot: new THREE.Vector3(-d.x * 1.5, 0.5, -d.z * 1.5), // far bottom edge of the top layer
+        turn: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(d, AXES.y).normalize(), LID_ANGLE * open),
+        lift: LID_LIFT * open,
+      };
+    }
 
     for (const c of this.cubies) {
       c.group.position.copy(c.pos);
@@ -266,15 +253,10 @@ export class RubiksCube {
         c.group.quaternion.premultiply(partial);
       }
 
-      if (flourish) {
-        const layer = Math.round(c.pos.y);               // 1 top, 0 middle, -1 bottom
-        const k = clamp01((t - (1 - layer) * WAVE_DELAY) / WAVE_SPIN);
-        if (k > 0 && k < 1) {
-          const dir = layer === 0 ? -1 : 1;              // middle layer turns the other way
-          const spinQ = new THREE.Quaternion().setFromAxisAngle(AXES.y, dir * 2 * Math.PI * easeInOutCubic(k));
-          c.group.position.applyQuaternion(spinQ);
-          c.group.quaternion.premultiply(spinQ);
-        }
+      if (lid && Math.round(c.pos.y) === 1) {
+        c.group.position.sub(lid.pivot).applyQuaternion(lid.turn).add(lid.pivot);
+        c.group.position.y += lid.lift;
+        c.group.quaternion.premultiply(lid.turn);
       }
 
       // Intro: each piece drops from above into its spot, layer by layer

@@ -1,7 +1,7 @@
 // Sets up the 3D scene and connects the cube to scrolling and dragging.
 
 import * as THREE from 'three';
-import { RubiksCube } from './cube.js';
+import { RubiksCube, LAUNCH_AT } from './cube.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -47,6 +47,7 @@ function init() {
 
   // ---- The cube ----
   const cube = new RubiksCube({ scrambleLength: 20, intro: !reducedMotion });
+  document.documentElement.classList.add('cube-ready'); // the email card waits for the cube
   const spin = new THREE.Group(); // wrapper we rotate when the user drags
   spin.add(cube.object);
   scene.add(spin);
@@ -108,6 +109,23 @@ function init() {
   canvas.addEventListener('pointerup', endGesture);
   canvas.addEventListener('pointercancel', endGesture);
 
+  // Direction from the cube to the camera, flattened to horizontal (world coordinates)
+  const viewerDirection = () => {
+    const centre = new THREE.Vector3();
+    cube.object.getWorldPosition(centre);
+    const d = camera.position.clone().sub(centre);
+    d.y = 0;
+    return { centre, d: d.normalize() };
+  };
+
+  // The gap under the open lid, in page (screen) coordinates
+  const launchPoint = () => {
+    const { centre, d } = viewerDirection();
+    const p = centre.add(new THREE.Vector3(0, 1.05, 0)).addScaledVector(d, 1.2).project(camera);
+    const r = canvas.getBoundingClientRect();
+    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+  };
+
   // ---- Animation loop ----
   const clock = new THREE.Clock();
   let wasSolved = false;
@@ -119,12 +137,19 @@ function init() {
     // Ease the cube toward the scroll position instead of jumping
     current = reducedMotion ? target : current + (target - current) * (1 - Math.exp(-dt * 5));
     if (Math.abs(target - current) < 0.0005) current = target;
+    // The last turn looks finished slightly before the maths says so: count it as done right then
+    if (target === cube.total && cube.total - current < 0.12) current = target;
     cube.setProgress(current);
 
     // Celebrate the moment the cube becomes solved
     const solved = cube.isSolved;
     if (solved && !wasSolved && cube.introDone) {
-      cube.celebrate();
+      // Open the lid on the side facing the viewer
+      const toCube = cube.object.matrixWorld.clone().invert();
+      cube.celebrate(viewerDirection().d.transformDirection(toCube));
+      // Once the lid is open, tell the page where the gap is so it can launch the email sticker
+      setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved', { detail: launchPoint() })),
+        reducedMotion ? 0 : LAUNCH_AT * 1000);
     }
     wasSolved = solved;
 
