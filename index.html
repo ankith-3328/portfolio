@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ankith C S · Backend & AI Engineer</title>
+  <meta name="description" content="Ankith C S: backend and AI engineer at IIT Madras. Distributed systems, LLM infrastructure, and a Rubik's cube that solves itself as you scroll.">
+  <meta name="theme-color" content="#ECEAE5">
+  <meta property="og:title" content="Ankith C S · Backend & AI Engineer">
+  <meta property="og:description" content="Distributed systems, LLM infrastructure, and a Rubik's cube that solves itself as you scroll.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Enables the fade-in effects. Without JavaScript, all content simply shows. -->
+  <script>document.documentElement.classList.add('js');</script>
+  <script src="js/reveal.js" defer></script>
+
+  <!-- The 3D cube: Three.js loaded straight from a CDN, so there is no build step. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#about">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Sections">
+      <a href="#about">About</a>
+      <a href="#experience">Experience</a>
+      <a href="#projects">Projects</a>
+      <a href="#skills">Skills</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <!-- The cube lives here. Decorative, so screen readers skip it. -->
+  <aside class="stage" aria-hidden="true">
+    <canvas></canvas>
+  </aside>
+
+  <main id="top">
+
+    <!-- STAGE 0 · SCRAMBLED -->
+    <section class="hero" data-stage="Scrambled">
+      <p class="eyebrow reveal">Backend &amp; AI Engineer</p>
+      <h1 class="reveal">Ankith C S</h1>
+      <p class="lede reveal">Incoming AI Engineer at HiLabs · IIT Madras ’27</p>
+      <ul class="socials reveal">
+        <li><a href="https://github.com/ankith-3328" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.linkedin.com/in/ankith-cs/" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li><a href="https://leetcode.com/u/ankith3328" target="_blank" rel="noopener">LeetCode</a></li>
+        <li><a href="https://codeforces.com/profile/Ankith3328" target="_blank" rel="noopener">Codeforces</a></li>
+      </ul>
+    </section>
+
+    <!-- STAGE 1 · CROSS -->
+    <section id="about" data-stage="Cross" aria-labelledby="about-title">
+      <p class="eyebrow reveal">01 · Cross</p>
+      <h2 id="about-title" class="reveal">About</h2>
+      <div class="prose reveal">
+        <p>I’m an incoming AI Engineer at <strong>HiLabs</strong> and a final-year B.Tech student at <strong>IIT Madras</strong>. Previously, I interned as a Software Development Engineer at <strong>Appian</strong>, where I received a Pre-Placement Offer, and at <strong>Elektrobit</strong>.</p>
+        <p>Away from the keyboard I swim (selected for NSO), roller skate, and solve 25+ Rubik’s cube variants, which is why the cube on this page solves itself as you read.</p>
+      </div>
+      <dl class="facts reveal">
+        <div><dt>9.13</dt><dd>CGPA at IIT Madras</dd></div>
+        <div><dt>3rd</dt><dd>in department, 70+ students</dd></div>
+        <div><dt>1st</dt><dd>HiLabs AI Quest 2026, 100+ teams</dd></div>
+        <div><dt>25+</dt><dd>cube variants solved</dd></div>
+      </dl>
+    </section>
+
+    <!-- STAGE 2 · F2L -->
+    <section id="experience" data-stage="F2L" aria-labelledby="exp-title">
+      <p class="eyebrow reveal">02 · F2L</p>
+      <h2 id="exp-title" class="reveal">Experience</h2>
+
+      <ol class="timeline">
+        <li class="role reveal">
+          <div class="role-head">
+            <h3>HiLabs</h3>
+            <span class="when">Incoming</span>
+          </div>
+          <p class="role-title">AI Engineer</p>
+        </li>
+
+        <li class="role reveal">
+          <div class="role-head">
+            <h3>Appian <span class="badge">PPO offered</span></h3>
+            <span class="when">Jun – Jul 2026</span>
+          </div>
+          <p class="role-title">Software Development Engineer Intern</p>
+          <ul>
+            <li>Owned and delivered the <strong>Release Tags</strong> feature (Java, SAIL, Spring, Hibernate) for 60+ customers.</li>
+            <li>Extended XSD schemas and DTOs to embed release metadata, removing redundant data fetches across workflows.</li>
+            <li>Drove a <strong>48% increase</strong> in Compare &amp; Deploy usage (27 → 40 sites).</li>
+          </ul>
+        </li>
+
+        <li class="role reveal">
+          <div class="role-head">
+            <h3>Elektrobit</h3>
+            <span class="when">Jun – Jul 2025</span>
+          </div>
+          <p class="role-title">Software Development Engineer Intern</p>
+          <ul>
+            <li>Built RESTful APIs with Spring Boot and MongoDB for backend data processing.</li>
+            <li>Built a <strong>RAG chatbot</strong> (LangChain, ChromaDB, Ollama) that answers employee questions from 50+ indexed PDFs using MiniLM embeddings.</li>
+          </ul>
+        </li>
+      </ol>
+    </section>
+
+    <!-- STAGE 3 · OLL -->
+    <section id="projects" data-stage="OLL" aria-labelledby="proj-title">
+      <p class="eyebrow reveal">03 · OLL</p>
+      <h2 id="proj-title" class="reveal">Projects</h2>
+
+      <div class="projects">
+        <article class="card reveal">
+          <h3>Distributed Rate Limiter</h3>
+          <p class="stack">Java · Spring Boot · Redis · Lua</p>
+          <p>Token Bucket and Fixed Window rate limiting across instances, with an atomic token bucket in Redis Lua scripts so concurrent requests can never overspend a quota.</p>
+          <dl class="metrics">
+            <div><dt>24.5K</dt><dd>requests / sec</dd></div>
+            <div><dt>4.11 ms</dt><dd>avg latency</dd></div>
+            <div><dt>675K+</dt><dd>requests, exact quota</dd></div>
+          </dl>
+        </article>
+
+        <article class="card reveal">
+          <h3>Semantic LLM Cache</h3>
+          <p class="stack">Java · Spring Boot · Spring AI · PostgreSQL · Ehcache</p>
+          <p>A two-tier cache: Ehcache for exact prompt matches, PostgreSQL for semantic similarity, with prompt normalization, cache versioning and request coalescing.</p>
+          <dl class="metrics">
+            <div><dt>−63.7%</dt><dd>p95 latency</dd></div>
+            <div><dt>−62.5%</dt><dd>LLM calls</dd></div>
+          </dl>
+        </article>
+
+        <article class="card reveal">
+          <h3>Multithreaded HTTP Server</h3>
+          <p class="stack">Java · TCP Sockets · HLS · MPEG-DASH</p>
+          <p>HTTP/1.1 from raw TCP sockets with a thread pool, range requests, path-traversal protection and live metrics, serving HLS and MPEG-DASH video.</p>
+          <dl class="metrics">
+            <div><dt>174</dt><dd>requests / sec</dd></div>
+            <div><dt>50 ms</dt><dd>p95 latency</dd></div>
+            <div><dt>49</dt><dd>JUnit tests in CI</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <!-- STAGE 4 · PLL -->
+    <section id="skills" data-stage="PLL" aria-labelledby="skills-title">
+      <p class="eyebrow reveal">04 · PLL</p>
+      <h2 id="skills-title" class="reveal">Skills &amp; achievements</h2>
+
+      <div class="skill-groups reveal">
+        <div>
+          <h3>Backend</h3>
+          <ul class="tags"><li>Java</li><li>Python</li><li>Spring Boot</li><li>Spring Security</li><li>Spring Data JPA</li><li>Hibernate</li><li>REST APIs</li><li>Microservices</li></ul>
+        </div>
+        <div>
+          <h3>AI &amp; LLMs</h3>
+          <ul class="tags"><li>RAG</li><li>Spring AI</li><li>LangChain</li><li>Embeddings</li><li>Hugging Face</li><li>Ollama</li></ul>
+        </div>
+        <div>
+          <h3>Data</h3>
+          <ul class="tags"><li>PostgreSQL</li><li>pgvector</li><li>Redis</li><li>MongoDB</li><li>ChromaDB</li></ul>
+        </div>
+        <div>
+          <h3>Tooling &amp; testing</h3>
+          <ul class="tags"><li>JUnit</li><li>Mockito</li><li>Pytest</li><li>Maven</li><li>Git</li><li>Linux</li><li>Postman</li><li>Swagger</li></ul>
+        </div>
+      </div>
+
+      <dl class="facts achievements reveal">
+        <div><dt>99.29</dt><dd>percentile<br>JEE Main 2023</dd></div>
+        <div><dt>AIR 5612</dt><dd>JEE Advanced<br>2023</dd></div>
+        <div><dt>210</dt><dd>state rank<br>KCET 2023</dd></div>
+        <div><dt>1000+</dt><dd>LeetCode problems<br>peak rating 1623</dd></div>
+      </dl>
+    </section>
+
+    <!-- STAGE 5 · SOLVED -->
+    <section id="contact" class="contact" data-stage="Solved" aria-labelledby="contact-title">
+      <p class="eyebrow reveal">05 · Solved</p>
+      <h2 id="contact-title" class="reveal">Solved.</h2>
+      <p class="lede reveal">The cube’s done. If you’re building something with backends or LLMs, I’d like to hear about it.</p>
+      <div class="mail-card reveal">
+        <a class="mail-link" href="mailto:ankithcs3328@gmail.com">
+          <span class="mini-cube" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="mail-text">
+            <span class="mail-label">Email</span>
+            <span class="mail-addr">ankithcs3328@gmail.com</span>
+          </span>
+        </a>
+        <button class="copy-btn" type="button" data-copy="ankithcs3328@gmail.com" aria-label="Copy email address">Copy</button>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>
