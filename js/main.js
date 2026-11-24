@@ -35,7 +35,7 @@ function init() {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-  const baseCameraPos = new THREE.Vector3(7.2, 5.8, 8.6);
+  const baseCameraPos = new THREE.Vector3(7.8, 6.3, 9.3);
 
   scene.add(new THREE.HemisphereLight(0xFFF6EA, 0x3B2A20, 1.7));
   const key = new THREE.DirectionalLight(0xFFFFFF, 2.0);
@@ -48,6 +48,7 @@ function init() {
   // ---- The cube ----
   const cube = new RubiksCube({ scrambleLength: 20, intro: !reducedMotion });
   document.documentElement.classList.add('cube-ready'); // the email card waits for the cube
+  cube.camera = camera;            // lets the intro keep exploding pieces inside the canvas
   const spin = new THREE.Group(); // wrapper we rotate when the user drags
   spin.add(cube.object);
   scene.add(spin);

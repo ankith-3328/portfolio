@@ -19,7 +19,8 @@
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --stage-w: 44vw;        /* width of the cube panel on desktop */
+  --stage-w: 44vw;        /* space kept free for the cube beside the text */
+  --canvas-w: 54vw;       /* the cube's canvas reaches further left, under the text column's edge */
   --pad: clamp(1.5rem, 5vw, 5rem);
 }
 
@@ -126,7 +127,7 @@ ul, ol { padding: 0; list-style: none; }
 /* ---------- The cube panel ---------- */
 .stage {
   position: fixed; top: 0; right: 0; z-index: 1;
-  width: var(--stage-w); height: 100vh; height: 100dvh;
+  width: var(--canvas-w); height: 100vh; height: 100dvh;
 }
 .stage canvas {
   display: block; width: 100%; height: 100%;
@@ -387,7 +388,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* ---------- Tablets & phones: the cube becomes a soft backdrop ---------- */
 @media (max-width: 900px) {
-  :root { --stage-w: 100vw; }
+  :root { --stage-w: 100vw; --canvas-w: 100vw; }
   .stage { opacity: .15; pointer-events: none; }
   main { width: 100%; }
   section { min-height: auto; padding: 7rem 0 3rem; }

@@ -63,6 +63,8 @@ const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const smooth = (t) => t * t * (3 - 2 * t);
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
 const easeInCubic = (t) => t * t * t;
+const easeOutExpo = (t) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t));
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
 // How open the lid is (0 = shut, 1 = open) at time t of the flourish
@@ -77,11 +79,15 @@ function lidOpen(t) {
   return 0;
 }
 
-// Intro timing: layers build bottom → middle → top, pieces go around each layer
-const INTRO_LAYER_GAP = 0.42;  // seconds between layers
-const INTRO_PIECE_GAP = 0.045; // seconds between pieces within a layer
-const INTRO_FLIGHT = 0.75;     // seconds for one piece to drop into place
-const INTRO_DROP = 4.5;        // how far above its spot a piece starts
+// Intro: a bomb's fuse burns down, it blows apart into the cube's pieces, and they pull back together
+const IN_FUSE = 1.0;      // bomb appears and its fuse burns
+const IN_SWELL = 0.35;    // last part of the fuse: the bomb swells and trembles
+const IN_BOOM = 0.55;     // pieces blast outward
+const IN_HANG = 0.3;      // pieces drift in mid-air
+const IN_STAGGER = 0.3;   // pieces start their return at slightly different moments
+const IN_RETURN = 0.6;    // each piece's pull back into its slot
+const IN_SNAP = 0.3;      // the whole cube squashes as it locks
+const IN_FIREBALL = 0.42; // the flash of fire at the explosion
 
 // Victory flourish: the top layer hinges open like a lid, the email pops out, the lid closes
 const OPEN_END = 0.32;          // lid fully open
@@ -166,32 +172,158 @@ export class RubiksCube {
     }
   }
 
-  // Decide when and from where each piece drops in during the intro.
+  // Give every piece its own explosion: direction, distance, tumble and return delay.
   // Returns how long the whole intro takes.
   #planIntro() {
-    let end = 0;
-    for (let layer = -1; layer <= 1; layer++) {
-      // Pieces of this layer, ordered around the ring, with the centre last
-      const pieces = this.cubies
-        .filter((c) => c.pos.y === layer)
-        .sort((a, b) => this.#ringOrder(a.pos) - this.#ringOrder(b.pos));
-
-      pieces.forEach((c, i) => {
-        c.delay = (layer + 1) * INTRO_LAYER_GAP + i * INTRO_PIECE_GAP;
-        // Start above its spot, nudged slightly outward, with a gentle tilt
-        const outward = new THREE.Vector3(c.pos.x, 0, c.pos.z).multiplyScalar(0.6);
-        c.introOffset = outward.add(new THREE.Vector3(0, INTRO_DROP, 0));
-        const tiltAxis = new THREE.Vector3(c.pos.z || 1, 0, -c.pos.x).normalize();
-        c.introTilt = new THREE.Quaternion().setFromAxisAngle(tiltAxis, 0.55);
-        end = Math.max(end, c.delay + INTRO_FLIGHT);
-      });
+    const r = () => Math.random() - 0.5;
+    for (const c of this.cubies) {
+      c.burstDir = c.pos.clone().normalize().add(new THREE.Vector3(r(), r(), r()).multiplyScalar(0.9)).normalize();
+      c.burstDist = 2.5 + Math.random() * 1.3;
+      c.spinAxis = new THREE.Vector3(r(), r(), r()).normalize();
+      c.spinSpeed = (2.5 + Math.random() * 4) * (Math.random() < 0.5 ? -1 : 1);
+      c.pullDelay = Math.random() * IN_STAGGER;
+      // Each piece starts somewhere inside the bomb
+      c.burstStart = new THREE.Vector3(r(), r(), r()).multiplyScalar(0.6);
     }
-    return end;
+    this.#buildBomb();
+
+    this.hangEnd = IN_FUSE + IN_BOOM + IN_HANG;
+    this.arriveAt = this.hangEnd + IN_STAGGER + IN_RETURN;
+    return this.arriveAt + IN_SNAP;
   }
 
-  #ringOrder(p) {
-    if (p.x === 0 && p.z === 0) return 10; // centre piece goes last
-    return Math.atan2(p.z, p.x) + Math.PI; // 0 … 2π around the layer
+  // A round black bomb with a cap, a rope fuse and a spark, plus the fireball and flash for the blast
+  #buildBomb() {
+    const bomb = this.bomb = new THREE.Group();
+    const shell = new THREE.MeshStandardMaterial({ color: 0x2B2521, roughness: 0.32, metalness: 0.55 });
+    bomb.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 48, 32), shell));
+
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.28, 0.22, 24),
+      new THREE.MeshStandardMaterial({ color: 0x4A3E35, roughness: 0.5, metalness: 0.4 }),
+    );
+    cap.position.y = 0.92;
+    bomb.add(cap);
+
+    this.fuseCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 1.0, 0),
+      new THREE.Vector3(0.08, 1.3, 0.05),
+      new THREE.Vector3(0.32, 1.52, 0.1),
+      new THREE.Vector3(0.62, 1.5, 0.14),
+    ]);
+    this.fuseSegments = 48;
+    this.fuse = new THREE.Mesh(
+      new THREE.TubeGeometry(this.fuseCurve, this.fuseSegments, 0.04, 8),
+      new THREE.MeshStandardMaterial({ color: 0xC9A27A, roughness: 0.9 }),
+    );
+    bomb.add(this.fuse);
+
+    this.spark = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xFFD08A }),
+    );
+    this.sparkLight = new THREE.PointLight(0xFF9A50, 0, 6, 2);
+    bomb.add(this.spark, this.sparkLight);
+    this.object.add(bomb);
+
+    this.fireball = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 32, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xFFA868, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+      }),
+    );
+    this.fireball.visible = false;
+    this.flash = new THREE.PointLight(0xFFB48A, 0, 14, 2);
+    this.object.add(this.fireball, this.flash);
+  }
+
+  // Where one piece is during the intro, given its settled position/rotation already in c.group
+  #introPiece(c, t) {
+    // Hidden inside the bomb until it blows
+    if (t < IN_FUSE) {
+      c.group.scale.setScalar(0);
+      return;
+    }
+
+    const finalPos = c.group.position.clone();
+    const drift = (time) => Math.max(0, time - (IN_FUSE + IN_BOOM)) * 0.35;
+    const spin = (time) => c.spinSpeed * (time - IN_FUSE);
+    const pullStart = this.hangEnd + c.pullDelay;
+    if (!c.fitted) this.#fitBurst(c, drift(pullStart));
+    const exploded = c.burstDir.clone().multiplyScalar(c.burstDist);
+
+    // Blast outward from inside the bomb, then drift while tumbling
+    if (t < pullStart) {
+      const k = easeOutExpo(clamp01((t - IN_FUSE) / IN_BOOM));
+      c.group.position.lerpVectors(c.burstStart, exploded, k).addScaledVector(c.burstDir, drift(t));
+      c.group.scale.setScalar(0.3 + 0.7 * clamp01(k * 1.4));
+      c.group.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(c.spinAxis, spin(t)));
+      return;
+    }
+
+    // Pulled back like a magnet: slow at first, then faster and faster into its slot
+    const e = easeInCubic(clamp01((t - pullStart) / IN_RETURN));
+    const from = exploded.addScaledVector(c.burstDir, drift(pullStart));
+    c.group.position.lerpVectors(from, finalPos, e);
+    c.group.scale.setScalar(1);
+    c.group.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(c.spinAxis, spin(pullStart) * (1 - e)));
+  }
+
+  // Shorten a piece's flight if its furthest point would leave the canvas
+  #fitBurst(c, maxDrift) {
+    c.fitted = true;
+    if (!this.camera) return;
+    const margin = 0.62; // keep piece centres within 62% of the canvas from its centre (pieces have size too)
+    const p = new THREE.Vector3();
+    for (let dist = c.burstDist; dist > 1.2; dist -= 0.1) {
+      p.copy(c.burstDir).multiplyScalar(dist + maxDrift);
+      this.object.localToWorld(p).project(this.camera);
+      c.burstDist = dist;
+      if (Math.abs(p.x) < margin && Math.abs(p.y) < margin) return;
+    }
+  }
+
+  // The bomb, fireball, flash, shake and final squash
+  #introWhole(t) {
+    // Bomb: pops in, fuse burns down with a flickering spark, swells and trembles, then vanishes
+    const lit = t < IN_FUSE;
+    this.bomb.visible = lit;
+    if (lit) {
+      const grow = easeOutBack(Math.min(1, t / 0.3)); // pops in with a slight overshoot
+      const swell = clamp01((t - (IN_FUSE - IN_SWELL)) / IN_SWELL);
+      this.bomb.scale.setScalar(1.35 * Math.max(0, grow) * (1 + 0.16 * swell * swell));
+      const a = 0.05 * swell * swell;
+      this.bomb.position.set(Math.sin(t * 90) * a, Math.cos(t * 77) * a, Math.sin(t * 63) * a);
+
+      const left = 1 - 0.9 * (t / IN_FUSE); // how much fuse remains
+      const segs = Math.max(1, Math.round(this.fuseSegments * left));
+      this.fuse.geometry.setDrawRange(0, segs * 8 * 6);
+      const tip = this.fuseCurve.getPoint(segs / this.fuseSegments);
+      this.spark.position.copy(tip);
+      this.sparkLight.position.copy(tip);
+      const flicker = 0.7 + Math.random() * 0.7;
+      this.spark.scale.setScalar(flicker);
+      this.sparkLight.intensity = 3 * flicker;
+    }
+
+    // Fireball and flash of light
+    const sinceBoom = t - IN_FUSE;
+    const f = sinceBoom / IN_FIREBALL;
+    this.fireball.visible = f > 0 && f < 1;
+    if (this.fireball.visible) {
+      this.fireball.scale.setScalar(0.7 + 2.6 * easeOutCubic(f));
+      this.fireball.material.opacity = 0.85 * (1 - f) * (1 - f);
+    }
+    this.flash.intensity = sinceBoom > 0 ? 50 * Math.exp(-sinceBoom * 6) : 0;
+
+    // Shake on the blast
+    const shake = sinceBoom > 0 ? 0.12 * Math.exp(-sinceBoom * 9) : 0;
+    this.object.position.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
+
+    // Squash as the last piece locks in
+    const k = (t - this.arriveAt) / IN_SNAP;
+    const squash = k > 0 && k < 1 ? 0.06 * Math.sin(Math.PI * k) * (1 - k) : 0;
+    this.object.scale.set(1 + squash, 1 - squash, 1 + squash);
   }
 
   get introDone() { return this.introTime >= this.introLength; }
@@ -245,6 +377,14 @@ export class RubiksCube {
       };
     }
 
+    if (!this.introDone) this.#introWhole(this.introTime);
+    else if (this.bomb.parent) {
+      // Intro finished: reset and remove the bomb and effects for good
+      this.object.position.set(0, 0, 0);
+      this.object.scale.setScalar(1);
+      this.object.remove(this.bomb, this.fireball, this.flash);
+    }
+
     for (const c of this.cubies) {
       c.group.position.copy(c.pos);
       c.group.quaternion.copy(c.quat);
@@ -259,14 +399,9 @@ export class RubiksCube {
         c.group.quaternion.premultiply(lid.turn);
       }
 
-      // Intro: each piece drops from above into its spot, layer by layer
+      // Intro: the big bang
       if (!this.introDone) {
-        const t = clamp01((this.introTime - c.delay) / INTRO_FLIGHT);
-        const k = easeOutQuart(t);
-        const tilt = new THREE.Quaternion().slerp(c.introTilt, 1 - k);
-        c.group.position.addScaledVector(c.introOffset, 1 - k);
-        c.group.quaternion.premultiply(tilt);
-        c.group.scale.setScalar(smooth(clamp01(t / 0.35))); // fade in by growing, early in the fall
+        this.#introPiece(c, this.introTime);
       } else if (c.group.scale.x !== 1) {
         c.group.scale.setScalar(1);
       }
