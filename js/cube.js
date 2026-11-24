@@ -291,7 +291,7 @@ export class RubiksCube {
     if (lit) {
       const grow = easeOutBack(Math.min(1, t / 0.3)); // pops in with a slight overshoot
       const swell = clamp01((t - (IN_FUSE - IN_SWELL)) / IN_SWELL);
-      this.bomb.scale.setScalar(1.35 * Math.max(0, grow) * (1 + 0.16 * swell * swell));
+      this.bomb.scale.setScalar(0.5 * Math.max(0, grow) * (1 + 0.16 * swell * swell));
       const a = 0.05 * swell * swell;
       this.bomb.position.set(Math.sin(t * 90) * a, Math.cos(t * 77) * a, Math.sin(t * 63) * a);
 
@@ -311,7 +311,7 @@ export class RubiksCube {
     const f = sinceBoom / IN_FIREBALL;
     this.fireball.visible = f > 0 && f < 1;
     if (this.fireball.visible) {
-      this.fireball.scale.setScalar(0.7 + 2.6 * easeOutCubic(f));
+      this.fireball.scale.setScalar(0.3 + 2.4 * easeOutCubic(f));
       this.fireball.material.opacity = 0.85 * (1 - f) * (1 - f);
     }
     this.flash.intensity = sinceBoom > 0 ? 50 * Math.exp(-sinceBoom * 6) : 0;
