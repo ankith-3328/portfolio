@@ -46,18 +46,19 @@ function init() {
   scene.add(rim);
 
   // ---- The cube ----
-  const cube = new RubiksCube({ scrambleLength: 20 });
+  const cube = new RubiksCube({ scrambleLength: 20, intro: !reducedMotion });
   const spin = new THREE.Group(); // wrapper we rotate when the user drags
   spin.add(cube.object);
   scene.add(spin);
+  spin.rotation.set(0.05, -0.35, 0);
 
   // ---- Keep the canvas sharp at any size ----
   function resize() {
-    const w = stage.clientWidth;
-    const h = stage.clientHeight;
-    if (!w || !h) return;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    if (!width || !height) return;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
     // Move the camera back on narrow screens so the whole cube fits
     const fit = Math.max(1, 2.9 / (Math.tan(THREE.MathUtils.degToRad(16)) * baseCameraPos.length() * camera.aspect));
     camera.position.copy(baseCameraPos).multiplyScalar(fit);
@@ -79,51 +80,61 @@ function init() {
   window.addEventListener('resize', readScroll);
   readScroll();
 
-  // ---- Drag to spin ----
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
+  // ---- Drag to spin the whole cube ----
+  let gesture = null;
   let velX = 0;
   let velY = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    gesture = { lastX: e.clientX, lastY: e.clientY };
     canvas.setPointerCapture(e.pointerId);
+    stage.classList.add('is-dragging');
   });
+
   canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    velY = (e.clientX - lastX) * 0.01;
-    velX = (e.clientY - lastY) * 0.01;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    if (!gesture) return;
+    velY = (e.clientX - gesture.lastX) * 0.01;
+    velX = (e.clientY - gesture.lastY) * 0.01;
     spin.rotation.y += velY;
     spin.rotation.x = THREE.MathUtils.clamp(spin.rotation.x + velX, -1.1, 1.1);
+    gesture.lastX = e.clientX;
+    gesture.lastY = e.clientY;
   });
-  const endDrag = () => { dragging = false; };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+
+  const endGesture = () => {
+    gesture = null;
+    stage.classList.remove('is-dragging');
+  };
+  canvas.addEventListener('pointerup', endGesture);
+  canvas.addEventListener('pointercancel', endGesture);
 
   // ---- Animation loop ----
   const clock = new THREE.Clock();
-  spin.rotation.set(0.05, -0.35, 0);
+  let wasSolved = false;
 
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05);
+    cube.tick(dt);
 
     // Ease the cube toward the scroll position instead of jumping
     current = reducedMotion ? target : current + (target - current) * (1 - Math.exp(-dt * 5));
     if (Math.abs(target - current) < 0.0005) current = target;
     cube.setProgress(current);
 
-    if (!dragging) {
+    // Celebrate the moment the cube becomes solved
+    const solved = cube.isSolved;
+    if (solved && !wasSolved && cube.introDone) {
+      cube.celebrate();
+    }
+    wasSolved = solved;
+
+    if (!gesture) {
       spin.rotation.y += velY;
       spin.rotation.x = THREE.MathUtils.clamp(spin.rotation.x + velX, -1.1, 1.1);
       velY *= 0.94;
       velX *= 0.94;
       spin.rotation.x += (0.05 - spin.rotation.x) * dt * 1.2; // drift back to a nice angle
-      if (!reducedMotion) spin.rotation.y += dt * 0.12;          // slow idle turn
+      if (!reducedMotion) spin.rotation.y += dt * 0.12;             // slow idle turn
     }
 
     renderer.render(scene, camera);
