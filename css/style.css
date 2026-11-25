@@ -14,6 +14,10 @@
   --hover-line: #D9C7B6;  /* card border on hover */
   --shadow: rgba(90, 60, 40, .35);
   --selection: #EBCFC2;
+  /* Mirror-cube metal: silver here, gold in the dark theme (matches the 3D cube) */
+  --metal: linear-gradient(135deg, #FFFFFF 0%, #B9BEC6 50%, #6E737C 100%);
+  --metal-edge: rgba(110, 115, 124, .45);
+  --metal-glow: rgba(150, 156, 166, .55);
 
   --serif: "Newsreader", Georgia, serif;
   --sans: "Inter", system-ui, sans-serif;
@@ -37,6 +41,9 @@
   --hover-line: #5C4B3F;
   --shadow: rgba(0, 0, 0, .55);
   --selection: #5A3527;
+  --metal: linear-gradient(135deg, #FCEBC0 0%, #D9A441 50%, #8B6A2E 100%);
+  --metal-edge: rgba(139, 106, 46, .45);
+  --metal-glow: rgba(217, 164, 65, .6);
   color-scheme: dark;
 }
 
@@ -238,7 +245,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 .num { font-weight: 500; color: var(--ink); }
 
-/* Achievements with tiny cube-sticker bullets */
+/* Achievements with tiny mirror-tile bullets */
 .exp-points {
   margin-top: 1.15rem; padding-top: 1.15rem; border-top: 1px dashed var(--line);
 }
@@ -246,10 +253,11 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 .exp-points li + li { margin-top: .5rem; }
 .exp-points li::before {
   content: ""; position: absolute; left: 0; top: .62em;
-  width: 7px; height: 7px; border-radius: 2px; background: var(--accent);
+  width: 7px; height: 7px; border-radius: 2px;
+  /* A tiny mirror tile, gold or silver like the cube's plates */
+  background: var(--metal);
+  box-shadow: 0 0 0 1px var(--metal-edge), 0 1px 4px -1px var(--metal-glow);
 }
-.exp-points li:nth-child(2)::before { background: #7D8C6A; }
-.exp-points li:nth-child(3)::before { background: #D9A441; }
 .exp-stack { margin-top: 1.15rem; font: .74rem var(--mono); color: var(--brown); letter-spacing: .02em; }
 
 /* Staggered fade-up as the cards enter */
@@ -303,14 +311,14 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* Contact */
 .contact h2 { font-size: clamp(3.5rem, 8vw, 6.5rem); font-style: italic; color: var(--accent); }
-/* Email card: a tiny solved cube face that scrambles on hover.
+/* Email card: a tiny solved mirror-cube face that scrambles on hover.
    It stays hidden until the solved cube launches it (see ui.js). */
 .mail-card.is-waiting { visibility: hidden; }
 .sticker-shot {
   position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none;
   width: 28px; height: 28px; border-radius: 6px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px #2A211B, 0 8px 24px -6px rgba(201, 100, 66, .6);
+  background: linear-gradient(135deg, #F6DFA6 0%, #D9A441 45%, #8B6A2E 100%);
+  box-shadow: 0 0 0 3px #1E1814, 0 8px 24px -6px rgba(217, 164, 65, .6);
 }
 .mail-card {
   display: inline-flex; align-items: stretch; align-self: flex-start;
@@ -332,22 +340,17 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 .mail-link:hover .mail-addr { color: var(--accent); }
 
 .mini-cube {
-  display: grid; grid-template-columns: repeat(3, 9px); gap: 2px;
-  padding: 3px; background: #2A211B; border-radius: 5px; flex: none;
+  /* A solved mirror-cube face: uneven rows and columns, all gold */
+  display: grid; grid-template-columns: 6px 9px 12px; grid-template-rows: 11px 9px 7px; gap: 2px;
+  padding: 3px; background: #1E1814; border-radius: 5px; flex: none;
+  transition: grid-template-columns .45s cubic-bezier(.3,1.4,.5,1), grid-template-rows .45s cubic-bezier(.3,1.4,.5,1) .08s;
 }
 .mini-cube i {
-  width: 9px; height: 9px; border-radius: 2px; background: var(--accent);
-  transition: background-color .35s ease;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #F6DFA6 0%, #D9A441 45%, #8B6A2E 100%);
 }
-/* Scrambled colors, applied one sticker after another */
-.mail-card:hover .mini-cube i:nth-child(1) { background: #7D8C6A; transition-delay: 0s; }
-.mail-card:hover .mini-cube i:nth-child(2) { background: #F4EDE1; transition-delay: .04s; }
-.mail-card:hover .mini-cube i:nth-child(3) { background: #D9A441; transition-delay: .08s; }
-.mail-card:hover .mini-cube i:nth-child(4) { background: #6F7F8C; transition-delay: .12s; }
-.mail-card:hover .mini-cube i:nth-child(6) { background: #8B5E3C; transition-delay: .16s; }
-.mail-card:hover .mini-cube i:nth-child(7) { background: #D9A441; transition-delay: .2s; }
-.mail-card:hover .mini-cube i:nth-child(8) { background: #7D8C6A; transition-delay: .24s; }
-.mail-card:hover .mini-cube i:nth-child(9) { background: #F4EDE1; transition-delay: .28s; }
+/* Hover: the layers shuffle, like a scrambled mirror cube */
+.mail-card:hover .mini-cube { grid-template-columns: 12px 6px 9px; grid-template-rows: 7px 11px 9px; }
 
 .copy-btn {
   font: 500 .68rem var(--mono); letter-spacing: .12em; text-transform: uppercase;

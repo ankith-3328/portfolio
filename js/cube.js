@@ -1,4 +1,6 @@
-// A 3x3 Rubik's cube driven by scrolling.
+// A 3x3 mirror cube driven by scrolling.
+// Same mechanism as a Rubik's cube, but every piece is one polished-gold colour and the layers have
+// different thicknesses, so a scrambled cube is a lumpy shape and "solved" means "a perfect box again".
 // The scroll position decides how many solution moves are done:
 // progress 7.4 = "7 moves done, the 8th is 40% through". Scrolling up undoes moves.
 //
@@ -7,26 +9,34 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-// Earth-tone stickers to fit the warm, minimal theme
-const STICKER_COLORS = {
-  U: 0xF4EDE1, // cream
-  D: 0xD9A441, // ochre
-  F: 0xC96442, // terracotta
-  B: 0x8B5E3C, // brown
-  R: 0x7D8C6A, // sage
-  L: 0x6F7F8C, // slate
+// Mirror plates on a dark body: warm gold in the dark theme, polished silver in the light one.
+// Each plate sits on a slightly larger, satin "brushed" rim that catches light along its edges.
+const FINISHES = {
+  gold: { plate: new THREE.Color(0xE8BE78), rim: new THREE.Color(0xB0803C) },
+  silver: { plate: new THREE.Color(0xEEF0F4), rim: new THREE.Color(0x9EA3AC) },
 };
-const BODY_COLOR = 0x2A211B;
+const BODY_COLOR = 0x1E1814;
+
+// The cuts sit at ±0.5 around the core on every axis (that is what lets the layers turn),
+// but the outer box is shifted, so the two outer layers on each axis are different thicknesses.
+// e.g. x: left layer 0.62 thick, middle 1, right layer 1.38.
+const OFFSET = new THREE.Vector3(0.38, 0.26, -0.2);
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
   y: new THREE.Vector3(0, 1, 0),
   z: new THREE.Vector3(0, 0, 1),
 };
-const FACE_AT = { x: ['L', 'R'], y: ['D', 'U'], z: ['B', 'F'] };
 
-const CUBIE_SIZE = 0.94;
-const STICKER_SIZE = 0.78;
+const GAP = 0.035;        // dark seam between pieces
+const PLATE_INSET = 0.07; // how far the mirror plate stops short of a piece's edges
+const RIM = 0.028;        // width of the brushed rim showing around each plate
+
+// The slab of space a layer occupies along one axis: [min, max]
+function slab(axis, layer) {
+  if (layer === 0) return [-0.5, 0.5];
+  return layer < 0 ? [-1.5 + OFFSET[axis], -0.5] : [0.5, 1.5 + OFFSET[axis]];
+}
 
 // A move: { axis: 'x'|'y'|'z', layer: -1|0|1, q: +1|-1 } = turn that layer by q·90° about +axis
 const invert = (m) => ({ ...m, q: -m.q });
@@ -44,18 +54,19 @@ function randomMoves(length, random = Math.random, lastAxis = null) {
   return moves;
 }
 
-function roundedSquare(size, radius) {
-  const h = size / 2;
+function roundedRect(w, h, radius) {
+  const x = w / 2;
+  const y = h / 2;
   const s = new THREE.Shape();
-  s.moveTo(-h + radius, -h);
-  s.lineTo(h - radius, -h);
-  s.quadraticCurveTo(h, -h, h, -h + radius);
-  s.lineTo(h, h - radius);
-  s.quadraticCurveTo(h, h, h - radius, h);
-  s.lineTo(-h + radius, h);
-  s.quadraticCurveTo(-h, h, -h, h - radius);
-  s.lineTo(-h, -h + radius);
-  s.quadraticCurveTo(-h, -h, -h + radius, -h);
+  s.moveTo(-x + radius, -y);
+  s.lineTo(x - radius, -y);
+  s.quadraticCurveTo(x, -y, x, -y + radius);
+  s.lineTo(x, y - radius);
+  s.quadraticCurveTo(x, y, x - radius, y);
+  s.lineTo(-x + radius, y);
+  s.quadraticCurveTo(-x, y, -x, y - radius);
+  s.lineTo(-x, -y + radius);
+  s.quadraticCurveTo(-x, -y, -x + radius, -y);
   return new THREE.ShapeGeometry(s, 6);
 }
 
@@ -69,6 +80,7 @@ const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 
 
 // How open the lid is (0 = shut, 1 = open) at time t of the flourish
 function lidOpen(t) {
+  if (t <= 0) return 0;
   if (t < OPEN_END) return easeOutBack(t / OPEN_END);
   if (t < CLOSE_START) return 1;
   if (t < CLOSE_END) return 1 - easeInCubic((t - CLOSE_START) / (CLOSE_END - CLOSE_START));
@@ -89,21 +101,28 @@ const IN_RETURN = 0.6;    // each piece's pull back into its slot
 const IN_SNAP = 0.3;      // the whole cube squashes as it locks
 const IN_FIREBALL = 0.42; // the flash of fire at the explosion
 
-// Victory flourish: the top layer hinges open like a lid, the email pops out, the lid closes
+// Victory flourish: a glint of light sweeps across the now-perfect box, then the top layer
+// hinges open like a lid, the email pops out, and the lid closes.
+const GLINT = 0.55;             // the glint's sweep; the lid waits for it (times below are after it)
 const OPEN_END = 0.32;          // lid fully open
-export const LAUNCH_AT = 0.26;  // the email leaves through the gap (seconds after solving)
+export const LAUNCH_AT = GLINT + 0.26;  // the email leaves through the gap (seconds after solving)
 const CLOSE_START = 0.85;       // lid starts closing
 const CLOSE_END = 1.12;         // lid shut
 const SETTLE_END = 1.35;        // tiny bounce after it shuts
 const LID_ANGLE = 0.6;          // how far the lid tips open (radians, ~34°)
 const LID_LIFT = 0.12;          // and how much it rises
-const CELEBRATION_LENGTH = 1.4;
+const CELEBRATION_LENGTH = GLINT + 1.4;
 // Scroll turns: smooth each quarter-turn and leave a short pause between moves
 const scrollEase = (t) => smooth(clamp01((t - 0.12) / 0.76));
 
-export class RubiksCube {
+export class MirrorCube {
   constructor({ scrambleLength = 20, intro = true } = {}) {
     this.object = new THREE.Group();
+    // The pieces turn about the core, but the solved box is off-centre from it: shift them back
+    // so the cube sits in the middle of the scene
+    this.core = new THREE.Group();
+    this.core.position.copy(OFFSET).negate();
+    this.object.add(this.core);
     this.cubies = [];
     this.#build();
 
@@ -120,42 +139,70 @@ export class RubiksCube {
     this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
 
+    // Light that sweeps across the faces when the cube is solved
+    this.glintLight = new THREE.PointLight(0xFFFFFF, 0, 9, 1.4);
+    this.object.add(this.glintLight);
+
     this.setProgress(0);
   }
 
   #build() {
-    const bodyGeo = new RoundedBoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE, 4, 0.09);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.6, metalness: 0.05 });
-    const stickerGeo = roundedSquare(STICKER_SIZE, 0.13);
-    const stickerMats = Object.fromEntries(
-      Object.entries(STICKER_COLORS).map(([face, color]) => [
-        face,
-        new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0 }),
-      ]),
-    );
+    const bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.55, metalness: 0.1 });
+    const mirrorMat = this.mirrorMat = new THREE.MeshStandardMaterial({ color: FINISHES.gold.plate.clone(), roughness: 0.07, metalness: 1 });
+    const rimMat = this.rimMat = new THREE.MeshStandardMaterial({ color: FINISHES.gold.rim.clone(), roughness: 0.32, metalness: 1 });
+    this.finish = FINISHES.gold;
     const zUp = new THREE.Vector3(0, 0, 1);
+    const others = { x: ['y', 'z'], y: ['x', 'z'], z: ['x', 'y'] };
 
     for (let x = -1; x <= 1; x++) {
       for (let y = -1; y <= 1; y++) {
         for (let z = -1; z <= 1; z++) {
           if (x === 0 && y === 0 && z === 0) continue; // hidden core
 
-          const group = new THREE.Group();
-          group.add(new THREE.Mesh(bodyGeo, bodyMat));
-
           const pos = new THREE.Vector3(x, y, z);
+          // This piece's box, in its own coordinates (the group sits on the lattice point it turns with)
+          const size = new THREE.Vector3();
+          const centre = new THREE.Vector3();
+          for (const axis of ['x', 'y', 'z']) {
+            const [lo, hi] = slab(axis, pos[axis]);
+            size[axis] = hi - lo - GAP;
+            centre[axis] = (lo + hi) / 2 - pos[axis];
+          }
+
+          const group = new THREE.Group();
+          const body = new THREE.Mesh(
+            new RoundedBoxGeometry(size.x, size.y, size.z, 3, Math.min(0.07, Math.min(size.x, size.y, size.z) * 0.12)),
+            bodyMat,
+          );
+          body.position.copy(centre);
+          group.add(body);
+
+          // A mirror plate on each outward face, sized to that face
           for (const axis of ['x', 'y', 'z']) {
             const side = pos[axis];
             if (side === 0) continue;
+            const [a, b] = others[axis];
+            const w = size[a] - 2 * PLATE_INSET;
+            const h = size[b] - 2 * PLATE_INSET;
             const normal = AXES[axis].clone().multiplyScalar(side);
-            const sticker = new THREE.Mesh(stickerGeo, stickerMats[FACE_AT[axis][(side + 1) / 2]]);
-            sticker.position.copy(normal).multiplyScalar(CUBIE_SIZE / 2 + 0.002);
-            sticker.quaternion.setFromUnitVectors(zUp, normal);
-            group.add(sticker);
+            const plate = new THREE.Mesh(roundedRect(w, h, Math.min(0.1, Math.min(w, h) * 0.2)), mirrorMat);
+            plate.quaternion.setFromUnitVectors(zUp, normal);
+            // Line the plate's local x/y up with the face's two axes (setFromUnitVectors may leave it twisted)
+            const localX = new THREE.Vector3(1, 0, 0).applyQuaternion(plate.quaternion);
+            if (Math.abs(localX[a]) < 0.5) plate.rotateZ(Math.PI / 2);
+            plate.position.copy(centre).addScaledVector(normal, size[axis] / 2 + 0.003);
+            group.add(plate);
+
+            // The brushed rim: a slightly bigger plate just underneath
+            const rim = new THREE.Mesh(
+              roundedRect(w + 2 * RIM, h + 2 * RIM, Math.min(0.12, Math.min(w, h) * 0.22) + RIM), rimMat);
+            rim.quaternion.copy(plate.quaternion);
+            rim.position.copy(centre).addScaledVector(normal, size[axis] / 2 + 0.0015);
+            group.add(rim);
           }
 
           const cubie = { group, pos, quat: new THREE.Quaternion() };
-          this.object.add(group);
+          this.core.add(group);
           this.cubies.push(cubie);
         }
       }
@@ -277,7 +324,7 @@ export class RubiksCube {
     const p = new THREE.Vector3();
     for (let dist = c.burstDist; dist > 1.2; dist -= 0.1) {
       p.copy(c.burstDir).multiplyScalar(dist + maxDrift);
-      this.object.localToWorld(p).project(this.camera);
+      this.core.localToWorld(p).project(this.camera);
       c.burstDist = dist;
       if (Math.abs(p.x) < margin && Math.abs(p.y) < margin) return;
     }
@@ -350,7 +397,25 @@ export class RubiksCube {
     if (towardViewer) this.lidToward.set(towardViewer.x, 0, towardViewer.z).normalize();
   }
 
+  // 'gold' or 'silver'. The colours blend over a moment unless instant.
+  setFinish(name, instant = false) {
+    this.finish = FINISHES[name] || FINISHES.gold;
+    if (instant) {
+      this.mirrorMat.color.copy(this.finish.plate);
+      this.rimMat.color.copy(this.finish.rim);
+    }
+  }
+
+  // How far through the solve glint we are (0..1), or null when there is none
+  get glint() {
+    const t = this.celebration;
+    return !this.calm && t < GLINT ? t / GLINT : null;
+  }
+
   tick(dt) {
+    const blend = 1 - Math.exp(-dt * 6);
+    this.mirrorMat.color.lerp(this.finish.plate, blend);
+    this.rimMat.color.lerp(this.finish.rim, blend);
     if (this.introTime !== Infinity) this.introTime += dt;
     if (this.celebration !== Infinity) {
       this.celebration += dt;
@@ -366,12 +431,24 @@ export class RubiksCube {
 
     // Victory flourish: the top layer tips open on a hinge along its far edge
     const t = this.celebration;
-    const open = !this.calm && t < CELEBRATION_LENGTH ? lidOpen(t) : 0;
+    const open = !this.calm && t < CELEBRATION_LENGTH ? lidOpen(t - GLINT) : 0;
+
+    // The glint: a bright light passes diagonally across the faces toward the viewer
+    const g = this.glint;
+    this.glintLight.intensity = g === null ? 0 : 70 * Math.sin(Math.PI * g) ** 2;
+    if (g !== null) {
+      const d = this.lidToward;
+      const across = new THREE.Vector3().crossVectors(AXES.y, d).normalize();
+      const s = -1 + 2 * smooth(g);
+      this.glintLight.position.copy(d).multiplyScalar(2.4)
+        .addScaledVector(across, 2.6 * s).addScaledVector(AXES.y, 2.2 - 3.2 * smooth(g));
+    }
     let lid = null;
     if (open !== 0) {
       const d = this.lidToward;
       lid = {
-        pivot: new THREE.Vector3(-d.x * 1.5, 0.5, -d.z * 1.5), // far bottom edge of the top layer
+        // far bottom edge of the top layer
+        pivot: new THREE.Vector3(-d.x * 1.5 + OFFSET.x, 0.5, -d.z * 1.5 + OFFSET.z),
         turn: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(d, AXES.y).normalize(), LID_ANGLE * open),
         lift: LID_LIFT * open,
       };
