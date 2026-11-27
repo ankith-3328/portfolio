@@ -13,7 +13,7 @@
     if (themeColor) themeColor.content = theme === 'dark' ? '#1C1916' : '#ECEAE5';
     if (save) { try { localStorage.setItem('theme', theme); } catch (e) {} }
   }
-  applyTheme(root.dataset.theme || 'dark', false);
+  applyTheme(root.dataset.theme || 'light', false);
   document.querySelector('.theme-toggle')?.addEventListener('click', () => {
     applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true);
   });
@@ -101,6 +101,66 @@
       draw();
     }
   }
+
+  // ---------- Tiles and cards draw themselves like a CAD drawing ----------
+  // Faint construction lines run out past the corners, the outline is traced over them, the panel
+  // fills in, and then the content appears. Fact tiles also get a numbered balloon in the corner.
+  // Experience and project cards are drawn when their cube piece lands (main.js); here they only
+  // draw on their own when the pieces aren't flying (phones, no 3D, reduced motion).
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const svgEl = (tag, attrs, parent) => {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    parent.appendChild(n);
+    return n;
+  };
+  function draft(el, { delay = 0, balloon = null } = {}) {
+    el.classList.add('drafted');
+    el.classList.remove('reveal');
+    el.style.setProperty('--draft-delay', `${delay}ms`);
+    const svg = svgEl('svg', { class: 'draft', 'aria-hidden': 'true' }, el);
+    const guides = svgEl('path', { class: 'draft-guide', pathLength: 1 }, svg);
+    const outline = svgEl('rect', { class: 'draft-outline', pathLength: 1 }, svg);
+    let mark = null;
+    if (balloon) {
+      mark = svgEl('g', { class: 'draft-balloon' }, svg);
+      svgEl('circle', { r: 9 }, mark);
+      svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' }, mark).textContent = balloon;
+    }
+    const fit = () => {
+      const w = el.offsetWidth, h = el.offsetHeight;
+      const r = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+      const x = 14; // how far the construction lines run past the corners
+      guides.setAttribute('d', `M${-x},0.5 H${w + x} M${-x},${h - 0.5} H${w + x} M0.5,${-x} V${h + x} M${w - 0.5},${-x} V${h + x}`);
+      Object.entries({ x: 0.5, y: 0.5, width: w - 1, height: h - 1, rx: r, ry: r })
+        .forEach(([k, v]) => outline.setAttribute(k, v));
+      mark?.setAttribute('transform', `translate(${w - 22} 22)`);
+    };
+    fit();
+    if ('ResizeObserver' in window) new ResizeObserver(fit).observe(el);
+  }
+  const drawNow = (el) => el.classList.add('is-drawn');
+  // Drawn when a good part of it is on screen, wiped (instantly) once it is fully off screen, so
+  // the drawing plays again every time it scrolls back into view
+  const drawObserver = 'IntersectionObserver' in window && !reducedMotion
+    ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const els = entry.target.matches('.facts') ? [...entry.target.querySelectorAll('.drafted')] : [entry.target];
+        // Cards whose cube piece is flying in are handled by main.js
+        if (els[0].classList.contains('flies') && root.classList.contains('flights-on')) continue;
+        if (!entry.isIntersecting) els.forEach((el) => el.classList.remove('is-drawn'));
+        else if (entry.intersectionRatio >= 0.3) els.forEach(drawNow);
+      }
+    }, { threshold: [0, 0.3] })
+    : null;
+  document.querySelectorAll('.facts').forEach((group) => {
+    group.querySelectorAll('.tile').forEach((tile, i) => draft(tile, { delay: i * 50, balloon: String(i + 1) }));
+    drawObserver ? drawObserver.observe(group) : group.querySelectorAll('.drafted').forEach(drawNow);
+  });
+  document.querySelectorAll('#experience .exp-card, #projects .card').forEach((card) => {
+    draft(card);
+    drawObserver ? drawObserver.observe(card) : drawNow(card);
+  });
 
   // ---------- Fade content in as it scrolls into view ----------
   const items = document.querySelectorAll('.reveal');

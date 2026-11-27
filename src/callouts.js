@@ -1,13 +1,13 @@
-// A light CAD touch around the cube: a width measurement, an X/Y/Z axis triad at its bottom-left
-// that turns with the cube (like the orientation widget in CAD apps), and a short hint line beside the top
-// corner when there is something worth saying. The line is an SVG over the canvas, the text
-// is plain HTML, and both follow the cube's outline on screen every frame.
+// A light CAD touch around the cube: dimension lines for its width, height and depth (drawn
+// along the cube's own edges, like a dimensioned part on a drawing), and a short hint line beside
+// the top corner when there is something worth saying. The lines are an SVG over the
+// canvas, the text is plain HTML, and both follow the cube on screen every frame.
 //
 // Two layouts:
 //   'stack' (cube beside a text column): hint at the top corner on the cube's open side,
-//            width measurement under the cube
-//   'side'  (cube centred: hero and finale): hint at the top right with the width as a small
-//            reading under it (the text sits right under the cube there)
+//            all three dimensions
+//   'side'  (cube centred: hero and finale): the text sits right under the cube there, so only
+//            the height is drawn, with width and depth as a small reading under the hint
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -18,68 +18,80 @@ function el(tag, attrs, parent) {
   return node;
 }
 
-// onWireframe(on): called when the visitor flips the wireframe switch under the hint
-export function makeCallouts(container, { onWireframe } = {}) {
+export function makeCallouts(container) {
   const root = document.createElement('div');
   root.className = 'callouts';
   root.setAttribute('aria-hidden', 'true');
   container.appendChild(root);
 
   const svg = el('svg', { class: 'co-lines' }, root);
-  // pathLength="1" lets CSS draw the lines in from nothing, whatever their real length
-  const measure = el('path', { pathLength: 1, class: 'co-measure-line' }, svg);
-
-  // Axis triad: a line and a letter per axis, plus a small hub where they meet
-  const triad = el('g', { class: 'co-triad' }, svg);
-  const axisEls = {};
+  // Dimension lines, one per axis, each with its reading
+  const dimEls = {};
   for (const name of ['x', 'y', 'z']) {
-    const g = el('g', { class: `co-axis co-axis-${name}` }, triad);
-    axisEls[name] = {
-      g,
-      line: el('line', {}, g),
-      text: Object.assign(el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' }, g),
-        { textContent: name.toUpperCase() }),
-    };
+    const label = document.createElement('div');
+    label.className = 'co-size';
+    root.appendChild(label);
+    dimEls[name] = { path: el('path', { class: 'co-measure-line' }, svg), label, text: '', w: 0 };
   }
-  const hub = el('circle', { r: 2.2, class: 'co-hub' }, triad);
 
   const tag = document.createElement('div');
   tag.className = 'co-tag';
-  tag.innerHTML = '<em></em><span></span>' +
-    '<button class="co-switch" type="button" tabindex="-1" aria-pressed="false"><i></i>Wireframe</button>';
+  tag.innerHTML = '<em></em><span></span>';
   root.appendChild(tag);
-  const [status, reading, toggle] = tag.children;
-  toggle.addEventListener('click', () => {
-    const on = toggle.getAttribute('aria-pressed') !== 'true';
-    toggle.setAttribute('aria-pressed', String(on));
-    onWireframe?.(on);
-  });
-
-  const size = document.createElement('div');
-  size.className = 'co-size';
-  root.appendChild(size);
+  const [status, reading] = tag.children;
 
   let tagText = '';
   let tagW = 0;
-  let sizeW = 0;
   let shown = false;
+
+  // One dimension: extension lines off the edge, the dimension line with slashed ends, and the
+  // reading breaking the line in the middle. Returns how far right it reaches.
+  const OFF = 22;
+  function drawDim(d, centre) {
+    const e = dimEls[d.name];
+    const ex = d.b.x - d.a.x, ey = d.b.y - d.a.y;
+    const len = Math.hypot(ex, ey);
+    const alpha = Math.min(Math.max((len - 30) / 40, 0), 1); // fades out when seen end-on
+    if (!d.show || alpha <= 0) {
+      e.path.setAttribute('d', '');
+      e.label.style.visibility = 'hidden';
+      return -Infinity;
+    }
+    const ux = ex / len, uy = ey / len;
+    // Offset away from the cube's middle
+    let nx = -uy, ny = ux;
+    if (((d.a.x + d.b.x) / 2 - centre.x) * nx + ((d.a.y + d.b.y) / 2 - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
+    const p = (pt, k, t = 0) => `${(pt.x + nx * k + ux * t).toFixed(1)},${(pt.y + ny * k + uy * t).toFixed(1)}`;
+    const tick = (pt) => `M${(pt.x + nx * OFF - (ux + nx) * 3.5).toFixed(1)},${(pt.y + ny * OFF - (uy + ny) * 3.5).toFixed(1)} ` +
+      `L${(pt.x + nx * OFF + (ux + nx) * 3.5).toFixed(1)},${(pt.y + ny * OFF + (uy + ny) * 3.5).toFixed(1)}`;
+    e.path.setAttribute('d',
+      `M${p(d.a, 6)} L${p(d.a, OFF + 5)} M${p(d.b, 6)} L${p(d.b, OFF + 5)} ` +
+      `M${p(d.a, OFF, -4)} L${p(d.b, OFF, 4)} ${tick(d.a)} ${tick(d.b)}`);
+    e.path.style.opacity = alpha;
+    const text = d.value.toFixed(1);
+    if (text !== e.text) { e.text = text; e.label.textContent = text; e.w = e.label.offsetWidth; }
+    const mx = (d.a.x + d.b.x) / 2 + nx * OFF, my = (d.a.y + d.b.y) / 2 + ny * OFF;
+    e.label.style.visibility = '';
+    e.label.style.opacity = alpha;
+    e.label.style.transform = `translate(${Math.round(mx - e.w / 2)}px, ${Math.round(my - 8)}px)`;
+    return mx + e.w / 2;
+  }
 
   return {
     // box: the cube's outline on screen {left, right, top, bottom}; W: window width
     // layout: 'stack' or 'side'; outer: +1 (the cube's open side is to the right) or -1
-    // alpha: 0..1; texts: { status, width } (status may be empty)
-    // axes: the cube's x, y, z axes in camera space [{ name, x, y, z }]
-    update({ box, W, layout, outer, alpha, texts, axes }) {
+    // alpha: 0..1; texts: { status, reading } (either may be empty)
+    // dims: [{ name, a, b, value }]: the edge each dimension measures, in screen px, and its size in mm
+    update({ box, W, layout, outer, alpha, texts, dims }) {
       root.style.opacity = alpha;
       const visible = alpha > 0.02;
       if (visible !== shown) {
         shown = visible;
         root.classList.toggle('is-on', visible);
-        root.style.visibility = visible ? '' : 'hidden'; // nothing clickable while faded out
       }
       if (!visible) return;
 
-      const readingText = layout === 'side' ? texts.width : '';
+      const readingText = layout === 'side' ? texts.reading : '';
       const key = `${texts.status}|${readingText}`;
       if (key !== tagText) {
         tagText = key;
@@ -92,51 +104,20 @@ export function makeCallouts(container, { onWireframe } = {}) {
       const o = 14; // breathing room around the outline
       const bl = left - o, br = right + o, bt = top, bb = bottom + o;
 
-      // The hint sits just outside the top corner on the cube's open side
+      // Dimensions: all three beside a text column, just the height when the text is underneath
+      const centre = { x: (left + right) / 2, y: (top + bottom) / 2 };
+      let reach = -Infinity;
+      for (const d of dims || []) {
+        const r = drawDim({ ...d, show: layout === 'stack' || d.name === 'y' }, centre);
+        if (d.name === 'y') reach = r;
+      }
+
+      // The hint sits just outside the top corner on the cube's open side, clear of the height
       const s = layout === 'side' ? 1 : outer;
-      const x = s > 0 ? br + 16 : bl - 16 - tagW;
+      const x = s > 0 ? Math.max(br + 16, reach + 14) : bl - 16 - tagW;
       tag.style.textAlign = s > 0 ? 'left' : 'right';
       tag.classList.toggle('is-left', s < 0);
       tag.style.transform = `translate(${Math.round(Math.min(Math.max(x, 16), W - tagW - 16))}px, ${Math.round(bt)}px)`;
-
-      // Axis triad, always at the cube's bottom-left corner, drawn as the camera sees the cube's own axes:
-      // longer when an axis lies across the screen, shorter when it points at you or away,
-      // and fainter when it points away. Drawn back to front.
-      if (axes) {
-        const R = 38;
-        const cx = bl - 40;
-        const cy = bottom - 8;
-        hub.setAttribute('cx', cx);
-        hub.setAttribute('cy', cy);
-        for (const a of [...axes].sort((p, q) => p.z - q.z)) {
-          const e = axisEls[a.name];
-          const x2 = cx + a.x * R, y2 = cy - a.y * R;
-          e.line.setAttribute('x1', cx); e.line.setAttribute('y1', cy);
-          e.line.setAttribute('x2', x2); e.line.setAttribute('y2', y2);
-          // Letters sit just past the tip, along the axis
-          const len = Math.hypot(a.x, a.y) || 1;
-          e.text.setAttribute('x', x2 + (a.x / len) * 8);
-          e.text.setAttribute('y', y2 - (a.y / len) * 8);
-          e.g.style.opacity = a.z < 0 ? 0.4 + 0.6 * (1 + a.z) : 1;
-          triad.appendChild(e.g); // re-append in depth order
-        }
-        triad.appendChild(hub);
-      }
-
-      // Width measurement: one hairline under the cube with end ticks, the reading in the middle
-      if (layout === 'stack') {
-        const y = bb + 18;
-        measure.setAttribute('d', `M${left},${y} H${right} M${left},${y - 4} V${y + 4} M${right},${y - 4} V${y + 4}`);
-        if (size.textContent !== texts.width) {
-          size.textContent = texts.width;
-          sizeW = size.offsetWidth;
-        }
-        size.style.visibility = '';
-        size.style.transform = `translate(${Math.round((left + right) / 2 - sizeW / 2)}px, ${Math.round(y - 8)}px)`;
-      } else {
-        measure.setAttribute('d', '');
-        size.style.visibility = 'hidden';
-      }
     },
   };
 }

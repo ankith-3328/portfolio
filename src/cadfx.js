@@ -1,8 +1,8 @@
-// Two small CAD effects on the cube itself, all drawn in 3D so they turn with it:
+// CAD effects on the cube itself, all drawn in 3D so they turn with it:
 //   - rotation arc: while a layer turns, a thin arc with an arrowhead sweeps around that layer,
 //     showing the direction and how far it has gone; it fades once the turn has landed
 //   - wireframe: a switchable drafting view; every piece becomes crisp edge lines, solid where
-//     visible and dashed where hidden behind other pieces
+//     visible and dashed where hidden behind other pieces, traced in like a plotter
 
 import * as THREE from 'three';
 import { layerCentre } from './cube.js';
@@ -107,32 +107,68 @@ export function makeTurnArc(cube) {
 
 // ---------------------------------------------------------------------------------------------
 // Wireframe (drafting) view
-export function makeWireframe(cube, extraSolids = []) {
+// Each piece is a box of 12 edges, listed as a pen would draw them (bottom loop, a riser, the top
+// loop, the other risers), so they can be traced in one after another like a plotter
+const PATH = [[0, 1], [1, 5], [5, 4], [4, 0], [0, 2], [2, 3], [3, 7], [7, 6], [6, 2], [1, 3], [5, 7], [4, 6]];
+const TRACE = 0.5; // seconds to trace one piece
+
+export function makeWireframe(cube, { instant = false } = {}) {
   const visibleMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0 });
   // Hidden edges: drawn only where something nearer is in front of them, dashed and faint
   const hiddenMat = new THREE.LineDashedMaterial({
     transparent: true, opacity: 0, dashSize: 0.07, gapSize: 0.06,
     depthFunc: THREE.GreaterDepth, depthWrite: false,
   });
+  const pieces = [];
   const lines = [];
   for (const c of cube.cubies) {
-    const box = new THREE.BoxGeometry(c.size.x, c.size.y, c.size.z);
-    const edges = new THREE.EdgesGeometry(box);
-    box.dispose();
-    const front = new THREE.LineSegments(edges, visibleMat);
-    const behind = new THREE.LineSegments(edges, hiddenMat);
-    behind.computeLineDistances();
+    const full = new Float32Array(PATH.length * 6);
+    const corner = (i) => [
+      c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
+      c.centre.y + (i & 2 ? 0.5 : -0.5) * c.size.y,
+      c.centre.z + (i & 4 ? 0.5 : -0.5) * c.size.z,
+    ];
+    PATH.forEach(([a, b], k) => { full.set(corner(a), k * 6); full.set(corner(b), k * 6 + 3); });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(full.slice(), 3));
+    const front = new THREE.LineSegments(geo, visibleMat);
+    const behind = new THREE.LineSegments(geo, hiddenMat);
+    behind.computeLineDistances(); // on the whole box, before any tracing
     for (const l of [front, behind]) {
-      l.position.copy(c.centre);
       l.visible = false;
       c.group.add(l);
       lines.push(l);
     }
+    // When this piece's trace starts after the switch is flipped: inner pieces first
+    const gen = Math.abs(Math.round(c.home.x)) + Math.abs(Math.round(c.home.y)) + Math.abs(Math.round(c.home.z));
+    pieces.push({ c, geo, full, drawn: -1, delay: gen * 0.09 + Math.random() * 0.06 });
   }
+
+  // Trace a piece up to r (0..1) of its path
+  const trace = (p, r) => {
+    if (r === p.drawn) return;
+    p.drawn = r;
+    const pos = p.geo.attributes.position;
+    const n = r * PATH.length;
+    const whole = Math.floor(n);
+    const frac = n - whole;
+    pos.array.set(p.full.subarray(0, whole * 6));
+    if (frac > 0 && whole < PATH.length) {
+      const o = whole * 6;
+      for (let i = 0; i < 3; i++) {
+        pos.array[o + i] = p.full[o + i];
+        pos.array[o + 3 + i] = p.full[o + i] + (p.full[o + 3 + i] - p.full[o + i]) * frac;
+      }
+    }
+    pos.needsUpdate = true;
+    p.geo.setDrawRange(0, (whole + (frac > 0 ? 1 : 0)) * 2);
+  };
+
   // The solid surfaces stop drawing colour in wireframe mode, but still fill the depth buffer,
   // which is what lets the hidden edges know they are hidden
-  const solids = [cube.bodyMat, cube.mirrorMat, cube.rimMat, cube.mechMat, ...extraSolids];
+  const solids = [cube.bodyMat, cube.mirrorMat, cube.rimMat, cube.mechMat];
   let on = false;
+  let since = Infinity; // seconds since the switch was flipped on (after the intro)
 
   return {
     get on() { return on; },
@@ -141,6 +177,7 @@ export function makeWireframe(cube, extraSolids = []) {
       hiddenMat.color.set(THEME_INK[name] || THEME_INK.dark);
     },
     toggle(value = !on) {
+      if (value && !on) since = 0;
       on = value;
       for (const m of solids) { m.colorWrite = !on; m.needsUpdate = true; }
       if (on) lines.forEach((l) => { l.visible = true; });
@@ -150,6 +187,20 @@ export function makeWireframe(cube, extraSolids = []) {
       visibleMat.opacity += ((on ? 0.9 : 0) - visibleMat.opacity) * k;
       hiddenMat.opacity += ((on ? 0.16 : 0) - hiddenMat.opacity) * k;
       if (!on && visibleMat.opacity < 0.01) lines.forEach((l) => { l.visible = false; });
+      if (!on) return;
+      since += dt;
+      for (const p of pieces) {
+        let r = 1;
+        if (!instant) {
+          // During the intro each piece is drawn as it splits off; afterwards, inside out
+          r = cube.introDone
+            ? (since - p.delay) / TRACE
+            : (cube.introTime - (p.c.growAt ?? 0) - 0.04) / TRACE;
+          r = Math.min(Math.max(r, 0), 1);
+          if (r < 1) r = 1 - (1 - r) ** 2; // the pen slows into the last edge
+        }
+        trace(p, r);
+      }
     },
   };
 }

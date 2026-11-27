@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ankith C S · Backend & AI Engineer</title>
   <meta name="description" content="Ankith C S: backend and AI engineer at IIT Madras. Distributed systems, LLM infrastructure, and a mirror cube that solves itself as you scroll.">
-  <meta name="theme-color" content="#1C1916">
+  <meta name="theme-color" content="#ECEAE5">
   <meta property="og:title" content="Ankith C S · Backend & AI Engineer">
   <meta property="og:description" content="Distributed systems, LLM infrastructure, and a mirror cube that solves itself as you scroll.">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -22,7 +22,7 @@
       root.classList.add('js');
       var saved = null;
       try { saved = localStorage.getItem('theme'); } catch (e) {}
-      root.dataset.theme = saved === 'light' ? 'light' : 'dark'; // dark unless the visitor picked light
+      root.dataset.theme = saved === 'dark' ? 'dark' : 'light'; // light unless the visitor picked dark
     })();
   </script>
 
@@ -38,6 +38,8 @@
   <div class="cursor" aria-hidden="true"><span class="cursor-dot"></span></div>
 
   <header class="site-header">
+    <!-- Switches the cube between its wireframe drawing and the solid mirror cube (shown once the 3D loads) -->
+    <button class="wire-toggle" type="button" aria-pressed="true" hidden><i aria-hidden="true"></i>Wireframe</button>
     <nav class="nav" aria-label="Sections">
       <a href="#about">About</a>
       <a href="#experience">Experience</a>
@@ -83,7 +85,7 @@
         <p>I’m an incoming AI Engineer at <strong>HiLabs</strong> and a final-year B.Tech student at <strong>IIT Madras</strong>. Previously, I interned as a Software Development Engineer at <strong>Appian</strong>, where I received a Pre-Placement Offer, and at <strong>Elektrobit</strong>.</p>
         <p>Away from the keyboard I swim (selected for NSO), roller skate, and solve 25+ Rubik’s cube variants, which is why the cube on this page solves itself as you read.</p>
       </div>
-      <dl class="facts reveal">
+      <dl class="facts">
         <div class="tile"><dt>9.13</dt><dd>CGPA at IIT Madras</dd></div>
         <div class="tile"><dt>3rd</dt><dd>in department, 70+ students</dd></div>
         <div class="tile"><dt>1st</dt><dd>HiLabs AI Quest 2026, 100+ teams</dd></div>
@@ -205,7 +207,7 @@
         </div>
       </div>
 
-      <dl class="facts achievements reveal">
+      <dl class="facts achievements">
         <div class="tile"><dt>99.29</dt><dd>percentile<br>JEE Main 2023</dd></div>
         <div class="tile"><dt>AIR 5612</dt><dd>JEE Advanced<br>2023</dd></div>
         <div class="tile"><dt>210</dt><dd>state rank<br>KCET 2023</dd></div>
