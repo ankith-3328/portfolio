@@ -5,6 +5,10 @@
 //   double-click → pull the cube apart / put it back together
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
 //   projects     → a piece flies out of the cube for each project card and the card unfolds from it
+//   backdrop     → a blueprint grid that bends around the cube, lit by a spotlight on the cursor
+//   callouts     → a light CAD layer: the cube's live width, an XYZ axis triad, a hint, and a
+//                  wireframe switch
+//   cadfx        → a rotation arc on the turning layer, and the wireframe view
 //
 // The canvas covers the whole window, behind the content. Each section's text sits on one side and
 // the cube travels to the other: the camera's view is shifted (and pulled closer or further) as you
@@ -13,8 +17,12 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MirrorCube, LAUNCH_AT } from './cube.js';
+import { makeBackdrop } from './backdrop.js';
+import { makeCallouts } from './callouts.js';
+import { makeTurnArc, makeWireframe } from './cadfx.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 
 function webglAvailable() {
   try {
@@ -193,7 +201,19 @@ function init() {
   // Gold in the dark theme, silver in the light theme, following the page's theme toggle
   const finishFor = () => (root.dataset.theme === 'light' ? 'silver' : 'gold');
   cube.setFinish(finishFor(), true);
-  new MutationObserver(() => cube.setFinish(finishFor()))
+
+  // CAD effects drawn on the cube itself
+  const turnArc = makeTurnArc(cube);
+  const wireframe = makeWireframe(cube);
+  const cadTheme = () => [turnArc, wireframe].forEach((fx) => fx.setTheme(root.dataset.theme));
+  cadTheme();
+
+  // The blueprint grid behind everything, drawn first every frame
+  const backdrop = makeBackdrop();
+  backdrop.setTheme(root.dataset.theme);
+  renderer.autoClear = false;
+
+  new MutationObserver(() => { cube.setFinish(finishFor()); backdrop.setTheme(root.dataset.theme); cadTheme(); })
     .observe(root, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Soft shadow on an invisible floor, so the cube feels grounded
@@ -276,23 +296,32 @@ function init() {
     const side = s.dataset.side;
     if (side === 'left') return { x: 0.75, y: 0.5, size: 0.88 };
     if (side === 'right') return { x: 0.25, y: 0.5, size: 0.88 };
-    return s.classList.contains('hero') ? heroRest : { x: 0.5, y: 0.3, size: 0.74 };
+    return centred.get(s).rest;
   };
   let sectionMids = [];
-  // Hero: the cube must sit in the gap between the header and the text, with clear space around it.
-  // A first guess comes from the gap's size; after the intro, fitHero() measures the cube's real
-  // outline on screen and nudges its size and height until it fits.
-  const heroRest = { x: 0.5, y: 0.38, size: 0.9 };
-  const heroText = sections[0].querySelector('.eyebrow');
-  const heroRoom = { top: 0, bottom: 0 };
+  // Centred sections (hero, finale): the cube must sit in the gap between the header and the
+  // section's text, with clear space around it for the CAD marks. A first guess comes from the
+  // gap's size; then fitCentred() measures the cube's real outline on screen and nudges its size
+  // and height until it fits.
+  const ROOM_TOP = 108; // below the header
+  const centred = new Map(
+    sections.filter((s) => s.dataset.side === 'center').map((s) => [s, {
+      rest: { x: 0.5, y: 0.38, size: 0.85 },
+      eyebrow: s.querySelector('.eyebrow'),
+    }]),
+  );
   const measureMids = () => {
     sectionMids = sections.map((s) => s.getBoundingClientRect().top + window.scrollY + s.offsetHeight / 2);
     const h = window.innerHeight;
-    heroRoom.top = 96;                                                    // below the header
-    heroRoom.bottom = heroText.offsetTop - sections[0].offsetTop - 40; // layout position: ignores the fade-in slide
-    const room = Math.max(heroRoom.bottom - heroRoom.top, h * 0.25);
-    heroRest.size = Math.min(1, room / (0.66 * h));
-    heroRest.y = (heroRoom.top + room / 2) / h;
+    for (const [s, c] of centred) {
+      // Where the text's top sits on screen while the cube rests here (layout position, so it
+      // ignores the fade-in slide): the hero rests at the top of the page, the finale at the bottom
+      const sectionTop = s === sections[0] ? 0 : h - s.offsetHeight;
+      const textTop = c.eyebrow.offsetTop - s.offsetTop + sectionTop;
+      const room = Math.max(textTop - 40 - ROOM_TOP, h * 0.25);
+      c.rest.size = Math.min(1, room / (0.66 * h));
+      c.rest.y = (ROOM_TOP + room / 2) / h;
+    }
   };
   window.addEventListener('resize', measureMids);
   new ResizeObserver(measureMids).observe(document.body);
@@ -301,9 +330,9 @@ function init() {
   // The cube's outline on screen (px): the corners of every piece, projected
   const boxCorner = new THREE.Vector3();
   function cubeScreenBox() {
-    let top = Infinity, bottom = -Infinity;
+    let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
     for (const c of cube.cubies) {
-      if (!c.group.visible) continue;
+      if (!c.group.visible || c.flying) continue; // pieces out on the cards don't count
       for (let i = 0; i < 8; i++) {
         boxCorner.set(
           c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
@@ -312,28 +341,35 @@ function init() {
         );
         c.group.localToWorld(boxCorner).project(camera);
         const y = (1 - boxCorner.y) / 2 * view.height;
+        const x = (boxCorner.x + 1) / 2 * view.width;
         if (y < top) top = y;
         if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
       }
     }
-    return { top, bottom };
+    return { top, bottom, left, right };
   }
 
-  // While resting in the hero, keep the real outline inside the gap above the text
-  function fitHero(dt) {
-    if (!wide.matches || !cube.introDone || anchorSection !== 0 || anchorK > 0) return;
+  // While resting in a centred section, keep the real outline inside the gap above its text
+  function fitCentred(dt) {
+    if (!wide.matches || !cube.introDone || cube.celebration !== Infinity) return; // not during the solve glint
+    const s = anchorK === 0 ? sections[anchorSection] : anchorK === 1 ? sections[anchorSection + 1] : null;
+    const c = s && centred.get(s);
+    if (!c) return;
     cube.object.updateWorldMatrix(true, true);
     const box = cubeScreenBox();
     const height = box.bottom - box.top;
     if (!(height > 0)) return;
-    const room = heroRoom.bottom - heroRoom.top;
+    const bottom = c.eyebrow.getBoundingClientRect().top - 40;
+    const room = Math.max(bottom - ROOM_TOP, view.height * 0.2);
     const rate = 1 - Math.exp(-dt * 5);
     // Shrink quickly if it is too big, grow back slowly (it changes shape as it turns)
     const want = THREE.MathUtils.clamp(room / height, 0.85, 1.15);
     const grow = want < 1 ? rate : rate * 0.3;
-    heroRest.size = Math.min(1.05, heroRest.size * (1 + (want - 1) * grow));
-    const off = (heroRoom.top + room / 2) - (box.top + box.bottom) / 2;
-    heroRest.y += (off / view.height) * rate;
+    c.rest.size = Math.min(1.05, c.rest.size * (1 + (want - 1) * grow));
+    const off = (ROOM_TOP + room / 2) - (box.top + box.bottom) / 2;
+    c.rest.y += (off / view.height) * rate;
   }
 
   let anchorSection = 0;
@@ -359,8 +395,11 @@ function init() {
   }
 
   // ---- Pointer: parallax, hover, twisting layers, spinning the cube ----
-  const pointer = { x: 0, y: 0, sx: 0, sy: 0 }; // -1..1 over the window, and a smoothed copy
+  const pointer = { x: 0, y: 0, sx: 0, sy: 0, px: -1e4, py: -1e4, at: -1e9 }; // -1..1, smoothed, and px
   window.addEventListener('pointermove', (e) => {
+    pointer.px = e.clientX;
+    pointer.py = e.clientY;
+    pointer.at = performance.now();
     pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
     pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
   }, { passive: true });
@@ -545,14 +584,6 @@ function init() {
     return { centre, d: d.normalize() };
   }
 
-  // The gap under the open lid, in page (screen) coordinates
-  const launchPoint = () => {
-    const { centre, d } = viewerDirection();
-    const p = centre.add(new THREE.Vector3(0, 1.05, 0)).addScaledVector(d, 1.2).project(camera);
-    const r = canvas.getBoundingClientRect();
-    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
-  };
-
   // ---- Pieces that fly out of the cube and become cards ----
   // About tiles, experience cards, project cards and achievement tiles each own one piece of the cube. As a card
   // scrolls into view its piece pops out, arcs across the page and shrinks into a small tile in the
@@ -623,6 +654,7 @@ function init() {
       const leave = clamp01((vh * 0.3 - bottom) / (vh * 0.3));
       const f = arrive * (1 - ease(leave));
       fl.f = f;
+      if (cubie) cubie.flying = f > 0;
 
       const landed = !enabled || f > 0.95;
       if (landed !== fl.landed) {
@@ -691,6 +723,104 @@ function init() {
     }
   }
 
+  // ---- Callouts and the live size readout ----
+  const callouts = makeCallouts(stage, { onWireframe: (on) => wireframe.toggle(on) });
+
+  // The cube's real size, from where its pieces actually are (not from the screen). A solved
+  // mirror cube is a 57 mm box; scrambled, its lumpy shape is bigger, and it shrinks to 57.0 × 57.0
+  // as the solve finishes.
+  const corner = new THREE.Vector3();
+  function extents(useHome) {
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (const c of cube.cubies) {
+      for (let i = 0; i < 8; i++) {
+        corner.set(
+          c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
+          c.centre.y + (i & 2 ? 0.5 : -0.5) * c.size.y,
+          c.centre.z + (i & 4 ? 0.5 : -0.5) * c.size.z,
+        );
+        if (useHome) corner.add(c.home);
+        else corner.applyQuaternion(c.quat).add(c.pos);
+        min.min(corner);
+        max.max(corner);
+      }
+    }
+    return max.sub(min);
+  }
+  const mmPerUnit = 57 / extents(true).x;
+
+  // Smoothed outline of the cube on screen, shared by the callouts and the backdrop
+  const sbox = { left: 0, right: 0, top: 0, bottom: 0, ready: false };
+  let calloutAlpha = 0;
+
+  // The cube's own X, Y and Z axes as the camera sees them (x right, y up, z toward the viewer),
+  // for the axis triad
+  const axisVec = new THREE.Vector3();
+  const axisDirections = () => ['x', 'y', 'z'].map((name) => {
+    axisVec.set(name === 'x' ? 1 : 0, name === 'y' ? 1 : 0, name === 'z' ? 1 : 0)
+      .transformDirection(cube.core.matrixWorld).transformDirection(camera.matrixWorldInverse);
+    return { name, x: axisVec.x, y: axisVec.y, z: axisVec.z };
+  });
+
+  // One short line on what is going on, or what you can do
+  function statusText() {
+    const n = cube.userMoves.length;
+    if (cube.freePlay) return n ? `free play · ${n} move${n === 1 ? '' : 's'}` : 'free play';
+    if (cube.isSolved) return 'every piece home';
+    const out = flights.filter((fl) => fl.f > 0).length;
+    if (out) return ''; // nothing to do while pieces are out on the cards
+    const left = cube.total - cube.applied;
+    if (left <= 3) return `${left} to go · finish it by hand`;
+    return 'drag a face to twist';
+  }
+
+  function updateOverlays(dt, time) {
+    const W = view.width, H = view.height;
+
+    // Measure the cube (once it has assembled) and ease the outline toward it
+    if (cube.introDone) {
+      const box = cubeScreenBox();
+      if (Number.isFinite(box.top)) {
+        const k = sbox.ready ? 1 - Math.exp(-dt * 8) : 1;
+        for (const key of ['left', 'right', 'top', 'bottom']) sbox[key] += (box[key] - sbox[key]) * k;
+        sbox.ready = true;
+      }
+    }
+
+    // Callouts: only while the cube is resting in a section (they fade out while it travels)
+    const resting = 1 - clamp01(Math.min(anchorK, 1 - anchorK) * 6);
+    const want = wide.matches && cube.introDone && sbox.ready ? resting : 0;
+    calloutAlpha += (want - calloutAlpha) * (1 - Math.exp(-dt * (want > calloutAlpha ? 4 : 10)));
+    const idx = anchorK > 0.5 ? anchorSection + 1 : anchorSection;
+    const section = sections[Math.min(idx, sections.length - 1)];
+    const width = extents(false).x * mmPerUnit;
+    const layout = section.dataset.side === 'center' ? 'side' : 'stack';
+    callouts.update({
+      box: sbox, W, layout,
+      outer: anchor.x > 0.5 ? 1 : -1,
+      alpha: calloutAlpha,
+      texts: { status: statusText(), width: `${width.toFixed(1)} mm` },
+      axes: axisDirections(),
+    });
+
+    // Backdrop: where the cube and the cursor are
+    const u = backdrop.uniforms;
+    u.uRes.value.set(W, H);
+    if (sbox.ready) {
+      u.uCube.value.set((sbox.left + sbox.right) / 2, (sbox.top + sbox.bottom) / 2);
+      u.uCubeR.value = Math.max(sbox.right - sbox.left, sbox.bottom - sbox.top) / 2;
+    } else {
+      u.uCube.value.set(anchor.x * W, anchor.y * H);
+      u.uCubeR.value = H * 0.25;
+    }
+    u.uMouse.value.set(pointer.px, pointer.py);
+    const mouseOn = finePointer && performance.now() - pointer.at < 3000 ? 1 : 0;
+    u.uMouseOn.value += (mouseOn - u.uMouseOn.value) * (1 - Math.exp(-dt * 3));
+    u.uScroll.value = window.scrollY;
+    u.uGrainSeed.value = reducedMotion ? 0 : (Math.floor(time * 12) * 37.31) % 997;
+  }
+
   // ---- Animation loop ----
   const clock = new THREE.Clock();
   let wasSolved = false;
@@ -707,7 +837,7 @@ function init() {
     // Glide the cube toward this scroll position's place on screen, turning as it travels
     updateAnchor();
     placeCamera();
-    fitHero(dt);
+    fitCentred(dt);
     travel.rotation.y = anchor.turn;
 
     // Free play holds the scroll solve. Scroll noticeably away and the visitor's moves rewind.
@@ -730,12 +860,11 @@ function init() {
     // Celebrate the moment the cube becomes solved
     const solved = cube.isSolved && !cube.freePlay;
     if (solved && !wasSolved && cube.introDone) {
-      // Open the lid on the side facing the viewer
+      // The glint crosses the side facing the viewer
       const toCube = cube.object.matrixWorld.clone().invert();
       cube.celebrate(viewerDirection().d.transformDirection(toCube));
-      // Once the lid is open, tell the page where the gap is so it can launch the email sticker
-      setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved', { detail: launchPoint() })),
-        reducedMotion ? 0 : LAUNCH_AT * 1000);
+      // As the glint finishes, tell the page: the contact title block draws itself in
+      setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved')), reducedMotion ? 0 : LAUNCH_AT * 1000);
     }
     if (!cube.freePlay) wasSolved = solved;
 
@@ -747,6 +876,8 @@ function init() {
     cube.explode = explode;
     cube.draw();
     updateFlights();
+    turnArc.update(dt, camera);
+    wireframe.update(dt);
 
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);
@@ -794,6 +925,10 @@ function init() {
     }
 
     followCube();
+    updateOverlays(dt, time);
+    renderer.clear();
+    // On narrow screens the grid comes from CSS (the canvas is only a faint backdrop there)
+    if (wide.matches) renderer.render(backdrop.scene, backdrop.camera);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

@@ -32,72 +32,61 @@
     }
   });
 
-  // ---------- The solved cube launches the email card ----------
-  // A sticker flies out of the cube, lands on the card's mini cube, and the card unfolds.
-  const mailCard = document.querySelector('.mail-card');
+  // ---------- The contact title block draws itself in when the cube is solved ----------
+  // Its ruled lines are generated from where the cells actually sit, so they match any layout:
+  // the outer frame first, then each divider, then the text fades in.
+  const block = document.querySelector('.title-block');
   const contact = document.querySelector('#contact');
-  if (mailCard && !reducedMotion) {
-    mailCard.classList.add('is-waiting');
-    let delivered = false;
+  const SVG = 'http://www.w3.org/2000/svg';
 
-    const showPlainly = () => {
-      if (delivered) return;
-      delivered = true;
-      mailCard.classList.remove('is-waiting');
-      mailCard.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }],
-        { duration: 600, easing: 'cubic-bezier(.2,.7,.2,1)' });
+  function ruleBlock() {
+    const svg = block.querySelector('.tb-lines');
+    const box = block.getBoundingClientRect();
+    const W = Math.round(box.width), H = Math.round(box.height);
+    const lines = [];
+    const seen = new Set();
+    for (const cell of block.querySelectorAll('.tb-cell')) {
+      const r = cell.getBoundingClientRect();
+      const x = Math.round(r.right - box.left), y = Math.round(r.bottom - box.top);
+      const x0 = Math.round(r.left - box.left), y0 = Math.round(r.top - box.top);
+      // Each cell contributes its right and bottom edges, unless they are the frame itself
+      if (x < W - 1 && !seen.has(`v${x},${y0}`)) { seen.add(`v${x},${y0}`); lines.push(`M${x},${y0} V${y}`); }
+      if (y < H - 1 && !seen.has(`h${y},${x0}`)) { seen.add(`h${y},${x0}`); lines.push(`M${x0},${y} H${x}`); }
+    }
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.replaceChildren();
+    const path = (d, cls, delay) => {
+      const p = document.createElementNS(SVG, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('pathLength', '1');
+      p.setAttribute('class', cls);
+      p.style.transitionDelay = `${delay}ms`;
+      svg.appendChild(p);
     };
+    path(`M0.5,0.5 H${W - 0.5} V${H - 0.5} H0.5 Z`, 'tb-frame', 0);
+    lines.forEach((d, i) => path(d, 'tb-rule', 420 + i * 90));
+    block.style.setProperty('--text-delay', `${520 + lines.length * 90}ms`);
+  }
 
-    const deliver = (from) => {
-      if (delivered) return;
-      delivered = true;
-      const icon = mailCard.querySelector('.mini-cube');
-      const card = mailCard.getBoundingClientRect();
-      const target = icon.getBoundingClientRect();
-      const to = { x: target.left + target.width / 2, y: target.top + target.height / 2 };
-
-      // The flying sticker, plus two fainter echoes as a trail
-      const flight = 900;
-      const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 140 }; // arc upward
-      const path = (scaleEnd, alpha) => [
-        { transform: `translate(${from.x}px, ${from.y}px) translate(-50%, -50%) scale(.4) rotate(0deg)`, opacity: 0 },
-        { transform: `translate(${from.x}px, ${from.y}px) translate(-50%, -50%) scale(1.25) rotate(-20deg)`, opacity: alpha, offset: 0.12 },
-        { transform: `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%) scale(1) rotate(-200deg)`, opacity: alpha, offset: 0.55 },
-        { transform: `translate(${to.x}px, ${to.y}px) translate(-50%, -50%) scale(${scaleEnd}) rotate(-360deg)`, opacity: alpha },
-      ];
-      const shots = [0, 1, 2].map((i) => {
-        const el = document.createElement('div');
-        el.className = 'sticker-shot';
-        el.style.opacity = 0;
-        if (i) el.style.filter = `blur(${i}px)`;
-        document.body.appendChild(el);
-        const anim = el.animate(path(i ? 0.5 : 0.85, i ? 0.35 / i : 1), {
-          duration: flight, delay: i * 55, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'forwards',
-        });
-        return { el, anim };
-      });
-
-      shots[0].anim.finished.then(() => {
-        shots.forEach(({ el }) => el.remove());
-        // Unfold the card from the mini cube
-        mailCard.classList.remove('is-waiting');
-        const originX = to.x - card.left;
-        const originY = to.y - card.top;
-        mailCard.style.transformOrigin = `${originX}px ${originY}px`;
-        mailCard.animate([
-          { transform: 'scale(.08)', opacity: 0, filter: 'blur(4px)' },
-          { transform: 'scale(1.04)', opacity: 1, filter: 'blur(0)', offset: 0.65 },
-          { transform: 'scale(1)', opacity: 1 },
-        ], { duration: 650, easing: 'cubic-bezier(.2,.7,.2,1)' });
-        icon.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }],
-          { duration: 500, delay: 250, easing: 'cubic-bezier(.3,1.6,.5,1)' });
-      });
+  if (block) {
+    let drawn = false;
+    const draw = () => {
+      if (drawn) return;
+      drawn = true;
+      block.classList.remove('is-waiting');
+      ruleBlock();
+      // Next frame, so the lines start from nothing and draw in
+      requestAnimationFrame(() => requestAnimationFrame(() => block.classList.add('is-drawn')));
     };
+    // Keep the lines on the cells if the layout changes later
+    new ResizeObserver(() => { if (drawn) ruleBlock(); }).observe(block);
 
-    window.addEventListener('cube:solved', (e) => {
-      if (!root.classList.contains('cube-ready') || root.classList.contains('no-webgl')) showPlainly();
-      else deliver(e.detail);
-    });
+    if (reducedMotion) {
+      draw();
+    } else {
+      block.classList.add('is-waiting');
+      window.addEventListener('cube:solved', draw);
+    }
 
     // Safety net: never leave the email hidden (no 3D, or the solve never fires)
     if ('IntersectionObserver' in window) {
@@ -106,10 +95,10 @@
         clearTimeout(timer);
         if (!entry.isIntersecting) return;
         const noCube = !root.classList.contains('cube-ready') || root.classList.contains('no-webgl');
-        timer = setTimeout(showPlainly, noCube ? 300 : 4500);
+        timer = setTimeout(draw, noCube ? 300 : 4500);
       }, { threshold: 0.4 }).observe(contact);
     } else {
-      showPlainly();
+      draw();
     }
   }
 
