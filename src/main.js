@@ -6,7 +6,9 @@
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
 //   projects     → a piece flies out of the cube for each project card and the card unfolds from it
 //   backdrop     → a blueprint grid that bends around the cube, lit by a spotlight on the cursor
-//   callouts     → CAD-style leader lines and live dimensions around the cube (stage, status, size)
+//   callouts     → a light CAD layer: the cube's live width, a hint, and a wireframe switch
+//   cadfx        → a rotation arc on the turning layer, the wireframe view, and assembly lines
+//                  that trace pieces back to their slots in the exploded view
 //
 // The canvas covers the whole window, behind the content. Each section's text sits on one side and
 // the cube travels to the other: the camera's view is shifted (and pulled closer or further) as you
@@ -17,6 +19,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { MirrorCube, LAUNCH_AT } from './cube.js';
 import { makeBackdrop } from './backdrop.js';
 import { makeCallouts } from './callouts.js';
+import { makeTurnArc, makeWireframe, makeAssemblyLines } from './cadfx.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -199,12 +202,19 @@ function init() {
   const finishFor = () => (root.dataset.theme === 'light' ? 'silver' : 'gold');
   cube.setFinish(finishFor(), true);
 
+  // CAD effects drawn on the cube itself
+  const turnArc = makeTurnArc(cube);
+  const wireframe = makeWireframe(cube);
+  const assembly = makeAssemblyLines(cube);
+  const cadTheme = () => [turnArc, wireframe, assembly].forEach((fx) => fx.setTheme(root.dataset.theme));
+  cadTheme();
+
   // The blueprint grid behind everything, drawn first every frame
   const backdrop = makeBackdrop();
   backdrop.setTheme(root.dataset.theme);
   renderer.autoClear = false;
 
-  new MutationObserver(() => { cube.setFinish(finishFor()); backdrop.setTheme(root.dataset.theme); })
+  new MutationObserver(() => { cube.setFinish(finishFor()); backdrop.setTheme(root.dataset.theme); cadTheme(); })
     .observe(root, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Soft shadow on an invisible floor, so the cube feels grounded
@@ -715,7 +725,7 @@ function init() {
   }
 
   // ---- Callouts and the live size readout ----
-  const callouts = makeCallouts(stage);
+  const callouts = makeCallouts(stage, { onWireframe: (on) => wireframe.toggle(on) });
 
   // The cube's real size, from where its pieces actually are (not from the screen). A solved
   // mirror cube is a 57 mm box; scrambled, its lumpy shape is bigger, and it shrinks to 57.0 × 57.0
@@ -857,6 +867,9 @@ function init() {
     cube.explode = explode;
     cube.draw();
     updateFlights();
+    assembly.update();
+    turnArc.update(dt, camera);
+    wireframe.update(dt);
 
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);

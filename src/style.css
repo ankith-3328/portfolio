@@ -175,6 +175,29 @@ ul, ol { padding: 0; list-style: none; }
 .co-tag em { font-size: .64rem; color: var(--accent); }
 .co-tag span { font-size: .6rem; color: var(--muted); }
 .co-tag em:empty, .co-tag span:empty { display: none; }
+/* The wireframe switch: a tiny pill toggle, the only clickable thing in the CAD layer */
+.co-switch {
+  display: inline-flex; align-items: center; gap: .45rem; margin-top: .45rem;
+  padding: .2rem .55rem .2rem .3rem; pointer-events: auto; cursor: pointer;
+  font: 500 .58rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  border: 1px solid var(--line); border-radius: 999px;
+  transition: color .2s, border-color .2s;
+}
+.co-switch i {
+  position: relative; width: 20px; height: 11px; border-radius: 999px;
+  background: var(--line); transition: background-color .25s;
+}
+.co-switch i::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ink-2); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1);
+}
+.co-switch:hover { color: var(--ink-2); border-color: var(--hover-line); }
+.co-switch[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.co-switch[aria-pressed="true"] i { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.co-switch[aria-pressed="true"] i::after { transform: translateX(9px); background: var(--accent); }
+/* Right-aligned when the hint sits on the cube's left */
+.co-tag.is-left .co-switch { flex-direction: row-reverse; padding: .2rem .3rem .2rem .55rem; }
 .co-size {
   padding: 0 .4rem; font-size: .6rem; line-height: 16px; letter-spacing: .06em; color: var(--muted);
   background: var(--bg);

@@ -17,7 +17,8 @@ function el(tag, attrs, parent) {
   return node;
 }
 
-export function makeCallouts(container) {
+// onWireframe(on): called when the visitor flips the wireframe switch under the hint
+export function makeCallouts(container, { onWireframe } = {}) {
   const root = document.createElement('div');
   root.className = 'callouts';
   root.setAttribute('aria-hidden', 'true');
@@ -29,9 +30,15 @@ export function makeCallouts(container) {
 
   const tag = document.createElement('div');
   tag.className = 'co-tag';
-  tag.innerHTML = '<em></em><span></span>';
+  tag.innerHTML = '<em></em><span></span>' +
+    '<button class="co-switch" type="button" tabindex="-1" aria-pressed="false"><i></i>Wireframe</button>';
   root.appendChild(tag);
-  const [status, reading] = tag.children;
+  const [status, reading, toggle] = tag.children;
+  toggle.addEventListener('click', () => {
+    const on = toggle.getAttribute('aria-pressed') !== 'true';
+    toggle.setAttribute('aria-pressed', String(on));
+    onWireframe?.(on);
+  });
 
   const size = document.createElement('div');
   size.className = 'co-size';
@@ -52,6 +59,7 @@ export function makeCallouts(container) {
       if (visible !== shown) {
         shown = visible;
         root.classList.toggle('is-on', visible);
+        root.style.visibility = visible ? '' : 'hidden'; // nothing clickable while faded out
       }
       if (!visible) return;
 
@@ -61,7 +69,6 @@ export function makeCallouts(container) {
         tagText = key;
         status.textContent = texts.status;
         reading.textContent = readingText;
-        tag.style.display = key === '|' ? 'none' : '';
         tagW = tag.offsetWidth;
       }
 
@@ -73,6 +80,7 @@ export function makeCallouts(container) {
       const s = layout === 'side' ? 1 : outer;
       const x = s > 0 ? br + 16 : bl - 16 - tagW;
       tag.style.textAlign = s > 0 ? 'left' : 'right';
+      tag.classList.toggle('is-left', s < 0);
       tag.style.transform = `translate(${Math.round(Math.min(Math.max(x, 16), W - tagW - 16))}px, ${Math.round(bt)}px)`;
 
       // Width measurement: one hairline under the cube with end ticks, the reading in the middle

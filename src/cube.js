@@ -36,6 +36,15 @@ const GAP = 0.035;        // dark seam between pieces
 const PLATE_INSET = 0.07; // how far the mirror plate stops short of a piece's edges
 const RIM = 0.028;        // width of the brushed rim showing around each plate
 
+// How far apart the pieces spread in the exploded view (0.42 = 42% further from the core)
+export const EXPLODE_SPREAD = 0.42;
+
+// The middle of a layer along its axis, in the core's coordinates (where the rotation arc goes)
+export function layerCentre(axis, layer) {
+  const [lo, hi] = slab(axis, layer);
+  return (lo + hi) / 2;
+}
+
 // The slab of space a layer occupies along one axis: [min, max]
 function slab(axis, layer) {
   if (layer === 0) return [-0.5, 0.5];
@@ -378,6 +387,9 @@ export class MirrorCube {
   }
 
   // The layer that is turning right now, if any: { axis, layer, angle }
+  // The layer turning right now, if any: { axis, layer, angle } (read-only, for the rotation arc)
+  get turning() { return this.#turning; }
+
   get #turning() {
     if (this.twist) return this.twist;
     const a = this.anims[0];
@@ -470,7 +482,7 @@ export class MirrorCube {
       }
 
       // Exploded view: every piece slides straight out from the core
-      if (this.explode > 0) c.group.position.multiplyScalar(1 + 0.42 * this.explode);
+      if (this.explode > 0) c.group.position.multiplyScalar(1 + EXPLODE_SPREAD * this.explode);
       if (intro) this.#introPiece(c, this.introTime);
       else c.group.scale.setScalar(1);
     }
