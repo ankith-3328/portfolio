@@ -1,13 +1,11 @@
-// Three small CAD effects on the cube itself, all drawn in 3D so they turn with it:
+// Two small CAD effects on the cube itself, all drawn in 3D so they turn with it:
 //   - rotation arc: while a layer turns, a thin arc with an arrowhead sweeps around that layer,
 //     showing the direction and how far it has gone; it fades once the turn has landed
 //   - wireframe: a switchable drafting view; every piece becomes crisp edge lines, solid where
 //     visible and dashed where hidden behind other pieces
-//   - assembly lines: while the cube is pulled apart (exploded view), dashed lines trace each
-//     piece back to the slot it came from
 
 import * as THREE from 'three';
-import { EXPLODE_SPREAD, layerCentre } from './cube.js';
+import { layerCentre } from './cube.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -152,46 +150,6 @@ export function makeWireframe(cube, extraSolids = []) {
       visibleMat.opacity += ((on ? 0.9 : 0) - visibleMat.opacity) * k;
       hiddenMat.opacity += ((on ? 0.16 : 0) - hiddenMat.opacity) * k;
       if (!on && visibleMat.opacity < 0.01) lines.forEach((l) => { l.visible = false; });
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------------------------
-// Assembly lines in the exploded view
-export function makeAssemblyLines(cube) {
-  const count = cube.cubies.length;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(count * 2 * 3), 3));
-  const material = new THREE.LineDashedMaterial({
-    transparent: true, opacity: 0, dashSize: 0.045, gapSize: 0.035, depthWrite: false, depthTest: false,
-  });
-  const lines = new THREE.LineSegments(geo, material);
-  lines.frustumCulled = false;
-  lines.renderOrder = 10;
-  lines.visible = false;
-  cube.core.add(lines);
-  const offset = new THREE.Vector3();
-
-  return {
-    setTheme(name) { material.color.set(THEME_ACCENT[name] || THEME_ACCENT.dark); },
-    update() {
-      const e = cube.explode;
-      material.opacity = Math.min(1, e * 2.2) * 0.95;
-      lines.visible = e > 0.02;
-      if (!lines.visible) return;
-      const pos = geo.attributes.position;
-      const spread = 1 + EXPLODE_SPREAD * e;
-      cube.cubies.forEach((c, i) => {
-        // From where the piece's centre would be when assembled to where it is now
-        offset.copy(c.centre).applyQuaternion(c.group.quaternion);
-        const g = c.group.position;
-        const hide = c.flying || !c.group.visible;
-        pos.setXYZ(i * 2, g.x / spread + offset.x, g.y / spread + offset.y, g.z / spread + offset.z);
-        if (hide) pos.setXYZ(i * 2 + 1, g.x / spread + offset.x, g.y / spread + offset.y, g.z / spread + offset.z);
-        else pos.setXYZ(i * 2 + 1, g.x + offset.x, g.y + offset.y, g.z + offset.z);
-      });
-      pos.needsUpdate = true;
-      lines.computeLineDistances();
     },
   };
 }

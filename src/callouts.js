@@ -1,5 +1,6 @@
-// A light CAD touch around the cube: a width measurement, and a short hint line beside the
-// top corner when there is something worth saying. The line is an SVG over the canvas, the text
+// A light CAD touch around the cube: a width measurement, an X/Y/Z axis triad that turns with
+// the cube (like the orientation widget in CAD apps), and a short hint line beside the top
+// corner when there is something worth saying. The line is an SVG over the canvas, the text
 // is plain HTML, and both follow the cube's outline on screen every frame.
 //
 // Two layouts:
@@ -28,6 +29,20 @@ export function makeCallouts(container, { onWireframe } = {}) {
   // pathLength="1" lets CSS draw the lines in from nothing, whatever their real length
   const measure = el('path', { pathLength: 1, class: 'co-measure-line' }, svg);
 
+  // Axis triad: a line and a letter per axis, plus a small hub where they meet
+  const triad = el('g', { class: 'co-triad' }, svg);
+  const axisEls = {};
+  for (const name of ['x', 'y', 'z']) {
+    const g = el('g', { class: `co-axis co-axis-${name}` }, triad);
+    axisEls[name] = {
+      g,
+      line: el('line', {}, g),
+      text: Object.assign(el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' }, g),
+        { textContent: name.toUpperCase() }),
+    };
+  }
+  const hub = el('circle', { r: 2.2, class: 'co-hub' }, triad);
+
   const tag = document.createElement('div');
   tag.className = 'co-tag';
   tag.innerHTML = '<em></em><span></span>' +
@@ -53,7 +68,8 @@ export function makeCallouts(container, { onWireframe } = {}) {
     // box: the cube's outline on screen {left, right, top, bottom}; W: window width
     // layout: 'stack' or 'side'; outer: +1 (the cube's open side is to the right) or -1
     // alpha: 0..1; texts: { status, width } (status may be empty)
-    update({ box, W, layout, outer, alpha, texts }) {
+    // axes: the cube's x, y, z axes in camera space [{ name, x, y, z }]
+    update({ box, W, layout, outer, alpha, texts, axes }) {
       root.style.opacity = alpha;
       const visible = alpha > 0.02;
       if (visible !== shown) {
@@ -82,6 +98,30 @@ export function makeCallouts(container, { onWireframe } = {}) {
       tag.style.textAlign = s > 0 ? 'left' : 'right';
       tag.classList.toggle('is-left', s < 0);
       tag.style.transform = `translate(${Math.round(Math.min(Math.max(x, 16), W - tagW - 16))}px, ${Math.round(bt)}px)`;
+
+      // Axis triad at the lower outer corner, drawn as the camera sees the cube's own axes:
+      // longer when an axis lies across the screen, shorter when it points at you or away,
+      // and fainter when it points away. Drawn back to front.
+      if (axes) {
+        const R = 38;
+        const cx = s > 0 ? br + 40 : bl - 40;
+        const cy = bottom - 8;
+        hub.setAttribute('cx', cx);
+        hub.setAttribute('cy', cy);
+        for (const a of [...axes].sort((p, q) => p.z - q.z)) {
+          const e = axisEls[a.name];
+          const x2 = cx + a.x * R, y2 = cy - a.y * R;
+          e.line.setAttribute('x1', cx); e.line.setAttribute('y1', cy);
+          e.line.setAttribute('x2', x2); e.line.setAttribute('y2', y2);
+          // Letters sit just past the tip, along the axis
+          const len = Math.hypot(a.x, a.y) || 1;
+          e.text.setAttribute('x', x2 + (a.x / len) * 8);
+          e.text.setAttribute('y', y2 - (a.y / len) * 8);
+          e.g.style.opacity = a.z < 0 ? 0.4 + 0.6 * (1 + a.z) : 1;
+          triad.appendChild(e.g); // re-append in depth order
+        }
+        triad.appendChild(hub);
+      }
 
       // Width measurement: one hairline under the cube with end ticks, the reading in the middle
       if (layout === 'stack') {

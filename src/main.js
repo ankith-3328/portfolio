@@ -6,9 +6,9 @@
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
 //   projects     → a piece flies out of the cube for each project card and the card unfolds from it
 //   backdrop     → a blueprint grid that bends around the cube, lit by a spotlight on the cursor
-//   callouts     → a light CAD layer: the cube's live width, a hint, and a wireframe switch
-//   cadfx        → a rotation arc on the turning layer, the wireframe view, and assembly lines
-//                  that trace pieces back to their slots in the exploded view
+//   callouts     → a light CAD layer: the cube's live width, an XYZ axis triad, a hint, and a
+//                  wireframe switch
+//   cadfx        → a rotation arc on the turning layer, and the wireframe view
 //
 // The canvas covers the whole window, behind the content. Each section's text sits on one side and
 // the cube travels to the other: the camera's view is shifted (and pulled closer or further) as you
@@ -19,7 +19,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { MirrorCube, LAUNCH_AT } from './cube.js';
 import { makeBackdrop } from './backdrop.js';
 import { makeCallouts } from './callouts.js';
-import { makeTurnArc, makeWireframe, makeAssemblyLines } from './cadfx.js';
+import { makeTurnArc, makeWireframe } from './cadfx.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -205,8 +205,7 @@ function init() {
   // CAD effects drawn on the cube itself
   const turnArc = makeTurnArc(cube);
   const wireframe = makeWireframe(cube);
-  const assembly = makeAssemblyLines(cube);
-  const cadTheme = () => [turnArc, wireframe, assembly].forEach((fx) => fx.setTheme(root.dataset.theme));
+  const cadTheme = () => [turnArc, wireframe].forEach((fx) => fx.setTheme(root.dataset.theme));
   cadTheme();
 
   // The blueprint grid behind everything, drawn first every frame
@@ -755,6 +754,15 @@ function init() {
   const sbox = { left: 0, right: 0, top: 0, bottom: 0, ready: false };
   let calloutAlpha = 0;
 
+  // The cube's own X, Y and Z axes as the camera sees them (x right, y up, z toward the viewer),
+  // for the axis triad
+  const axisVec = new THREE.Vector3();
+  const axisDirections = () => ['x', 'y', 'z'].map((name) => {
+    axisVec.set(name === 'x' ? 1 : 0, name === 'y' ? 1 : 0, name === 'z' ? 1 : 0)
+      .transformDirection(cube.core.matrixWorld).transformDirection(camera.matrixWorldInverse);
+    return { name, x: axisVec.x, y: axisVec.y, z: axisVec.z };
+  });
+
   // One short line on what is going on, or what you can do
   function statusText() {
     const n = cube.userMoves.length;
@@ -793,6 +801,7 @@ function init() {
       outer: anchor.x > 0.5 ? 1 : -1,
       alpha: calloutAlpha,
       texts: { status: statusText(), width: `${width.toFixed(1)} mm` },
+      axes: axisDirections(),
     });
 
     // Backdrop: where the cube and the cursor are
@@ -867,7 +876,6 @@ function init() {
     cube.explode = explode;
     cube.draw();
     updateFlights();
-    assembly.update();
     turnArc.update(dt, camera);
     wireframe.update(dt);
 
