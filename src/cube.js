@@ -106,12 +106,16 @@ function lidOpen(t) {
 // The bare core (hub and axles) drops in and bounces. Then the pieces grow outward in generations,
 // like cells splitting: centres slide out of the core, each edge splits off a centre, and each
 // corner splits off an edge. Every piece twists a quarter turn as it emerges and snaps into place.
-const IN_DROP_START = 0.1;          // core starts falling
-const IN_DROP = 0.42;               // and lands this much later
-const IN_GEN = [0, 0.72, 1.06, 1.4]; // when each generation starts: [core, centres, edges, corners]
-const IN_GROW = 0.34;               // one piece's trip out of its parent
-const IN_STAGGER = 0.08;            // pieces of one generation start at slightly different moments
-const IN_SETTLE = 0.3;              // the last squash
+const IN_DROP_START = 0.08;          // core starts falling
+const IN_DROP = 0.3;                 // and slams down this much later
+const IN_GEN = [0, 0.5, 0.74, 0.98]; // when each generation starts: [core, centres, edges, corners]
+const IN_GROW = 0.22;                // one piece's trip out of its parent
+const IN_STAGGER = 0.05;             // pieces of one generation start at slightly different moments
+const IN_SETTLE = 0.32;              // the final lock
+const IN_LOCK = IN_GEN[3] + IN_STAGGER + IN_GROW * 0.75; // the moment the last corners hit
+
+// A hard snap: shoots past the slot and kicks back
+const snap = (t) => 1 + 3.6 * Math.pow(t - 1, 3) + 2.6 * Math.pow(t - 1, 2);
 
 // A quick, damped squash: 0 → up → 0 over `length` seconds after it starts
 const pulse = (x, length) => (x > 0 && x < length ? Math.sin(Math.PI * x / length) * (1 - x / length) : 0);
@@ -149,8 +153,12 @@ export class MirrorCube {
     this.progress = 0;
 
     this.introTime = intro ? 0 : Infinity;
-    this.introLength = IN_GEN[3] + IN_STAGGER + IN_GROW + IN_SETTLE;
+    this.introLength = IN_LOCK + IN_SETTLE;
     if (intro) this.#planAssembly();
+    // A warm flash in front of the cube each time a generation locks in
+    this.popLight = new THREE.PointLight(0xFFC48A, 0, 12, 1.6);
+    this.popLight.position.set(2.5, 2.5, 3.5);
+    this.object.add(this.popLight);
     this.celebration = Infinity; // seconds since the last "solved" flourish
     this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
@@ -276,16 +284,29 @@ export class MirrorCube {
     }
   }
 
-  // The core's fall and bounce, and the whole cube's squash as each generation lands
+  // The core's slam and bounce, then a squash, a flash and a kick as each generation lands
   #introWhole(t) {
     const land = IN_DROP_START + IN_DROP;
     const d = clamp01((t - IN_DROP_START) / IN_DROP);
-    this.hub.scale.setScalar(t < IN_DROP_START ? 0 : 0.7 + 0.3 * d);
-    this.hub.position.y = d < 1 ? 3.4 * (1 - d * d) : 0.22 * pulse(t - land, 0.32);
+    this.hub.scale.setScalar(t < IN_DROP_START ? 0 : 0.6 + 0.4 * d);
+    this.hub.position.y = d < 1 ? 4 * (1 - d * d * d) : 0.3 * pulse(t - land, 0.26);
 
-    let squash = 0.07 * pulse(t - land, 0.28);
-    for (let g = 1; g <= 3; g++) squash += 0.035 * pulse(t - (IN_GEN[g] + IN_GROW * 0.6), 0.26);
+    const hits = [land, IN_GEN[1] + IN_GROW * 0.75, IN_GEN[2] + IN_GROW * 0.75, IN_LOCK];
+    const power = [0.14, 0.07, 0.08, 0.13];
+    let squash = 0;
+    let flash = 0;
+    let shake = 0;
+    hits.forEach((at, i) => {
+      squash += power[i] * pulse(t - at, 0.22);
+      const since = t - at;
+      if (since > 0) {
+        flash += (i === 3 ? 60 : 22) * Math.exp(-since * 9);
+        shake += (i === 0 || i === 3 ? 0.09 : 0.03) * Math.exp(-since * 14);
+      }
+    });
     this.object.scale.set(1 + squash, 1 - squash, 1 + squash);
+    this.popLight.intensity = flash;
+    this.object.position.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
   }
 
   // One piece: hidden inside its parent, then pushed out with a twist, overshooting into its slot
@@ -294,8 +315,8 @@ export class MirrorCube {
     if (k <= 0) return c.group.scale.setScalar(0);
     if (k >= 1) return c.group.scale.setScalar(1);
     const slot = c.group.position.clone();
-    c.group.position.lerpVectors(c.parentPos, slot, easeOutBack(k));
-    c.group.scale.setScalar(0.35 + 0.65 * easeOutCubic(k));
+    c.group.position.lerpVectors(c.parentPos, slot, snap(k));
+    c.group.scale.setScalar(0.15 + 0.85 * Math.min(1, easeOutCubic(k) * 1.15));
     c.group.quaternion.premultiply(
       new THREE.Quaternion().setFromAxisAngle(AXES[c.splitAxis], c.splitTwist * (1 - easeOutCubic(k))));
   }
@@ -450,6 +471,8 @@ export class MirrorCube {
     else if (!this.introCleaned) {
       this.introCleaned = true;
       this.object.scale.setScalar(1);
+      this.object.position.set(0, 0, 0);
+      this.popLight.intensity = 0;
       this.hub.position.set(0, 0, 0);
       this.hub.scale.setScalar(1);
     }

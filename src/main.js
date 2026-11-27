@@ -647,6 +647,8 @@ function init() {
   let wasSolved = false;
   let explode = 0;
   let satScale = 0;
+  let satKick = 0;      // 1 → 0: satellites flung outward when the intro locks
+  let introBurst = false;
 
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05);
@@ -712,9 +714,12 @@ function init() {
     scrollSpeed += (Math.abs(sy - lastScrollY) / Math.max(dt, 1e-3) - scrollSpeed) * (1 - Math.exp(-dt * 6));
     lastScrollY = sy;
     satBoost = Math.max(0, satBoost - dt * 0.5);
+    // The cube locking together throws the satellites out, and they spin back into orbit
+    if (cube.introDone && !introBurst) { introBurst = true; if (!reducedMotion) { satScale = 1; satBoost = 0.7; satKick = 1; } }
+    satKick = Math.max(0, satKick - dt * 1.6);
     satScale += ((cube.introDone ? 1 : 0) - satScale) * (1 - Math.exp(-dt * 2.5));
     const satSpeed = reducedMotion ? 0.3 : 1 + Math.min(scrollSpeed / 300, 6) + satBoost * 10;
-    satellites.update(dt, reducedMotion ? 0 : time, satSpeed, satScale, explode * 0.35);
+    satellites.update(dt, reducedMotion ? 0 : time, satSpeed, satScale, explode * 0.35 + 0.9 * satKick * satKick);
     satellites.mesh.visible = satScale > 0.01;
 
     // Shadow fades in with the cube, a touch lighter on the light theme
