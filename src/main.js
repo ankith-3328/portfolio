@@ -5,6 +5,8 @@
 //   double-click → pull the cube apart / put it back together
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
 //   projects     → a piece flies out of the cube for each project card and the card unfolds from it
+//   backdrop     → a blueprint grid that bends around the cube, lit by a spotlight on the cursor
+//   callouts     → CAD-style leader lines and live dimensions around the cube (stage, status, size)
 //
 // The canvas covers the whole window, behind the content. Each section's text sits on one side and
 // the cube travels to the other: the camera's view is shifted (and pulled closer or further) as you
@@ -13,8 +15,11 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MirrorCube, LAUNCH_AT } from './cube.js';
+import { makeBackdrop } from './backdrop.js';
+import { makeCallouts } from './callouts.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 
 function webglAvailable() {
   try {
@@ -193,7 +198,13 @@ function init() {
   // Gold in the dark theme, silver in the light theme, following the page's theme toggle
   const finishFor = () => (root.dataset.theme === 'light' ? 'silver' : 'gold');
   cube.setFinish(finishFor(), true);
-  new MutationObserver(() => cube.setFinish(finishFor()))
+
+  // The blueprint grid behind everything, drawn first every frame
+  const backdrop = makeBackdrop();
+  backdrop.setTheme(root.dataset.theme);
+  renderer.autoClear = false;
+
+  new MutationObserver(() => { cube.setFinish(finishFor()); backdrop.setTheme(root.dataset.theme); })
     .observe(root, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Soft shadow on an invisible floor, so the cube feels grounded
@@ -301,9 +312,9 @@ function init() {
   // The cube's outline on screen (px): the corners of every piece, projected
   const boxCorner = new THREE.Vector3();
   function cubeScreenBox() {
-    let top = Infinity, bottom = -Infinity;
+    let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
     for (const c of cube.cubies) {
-      if (!c.group.visible) continue;
+      if (!c.group.visible || c.flying) continue; // pieces out on the cards don't count
       for (let i = 0; i < 8; i++) {
         boxCorner.set(
           c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
@@ -312,11 +323,14 @@ function init() {
         );
         c.group.localToWorld(boxCorner).project(camera);
         const y = (1 - boxCorner.y) / 2 * view.height;
+        const x = (boxCorner.x + 1) / 2 * view.width;
         if (y < top) top = y;
         if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
       }
     }
-    return { top, bottom };
+    return { top, bottom, left, right };
   }
 
   // While resting in the hero, keep the real outline inside the gap above the text
@@ -359,8 +373,11 @@ function init() {
   }
 
   // ---- Pointer: parallax, hover, twisting layers, spinning the cube ----
-  const pointer = { x: 0, y: 0, sx: 0, sy: 0 }; // -1..1 over the window, and a smoothed copy
+  const pointer = { x: 0, y: 0, sx: 0, sy: 0, px: -1e4, py: -1e4, at: -1e9 }; // -1..1, smoothed, and px
   window.addEventListener('pointermove', (e) => {
+    pointer.px = e.clientX;
+    pointer.py = e.clientY;
+    pointer.at = performance.now();
     pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
     pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
   }, { passive: true });
@@ -623,6 +640,7 @@ function init() {
       const leave = clamp01((vh * 0.3 - bottom) / (vh * 0.3));
       const f = arrive * (1 - ease(leave));
       fl.f = f;
+      if (cubie) cubie.flying = f > 0;
 
       const landed = !enabled || f > 0.95;
       if (landed !== fl.landed) {
@@ -689,6 +707,99 @@ function init() {
       cubie.group.quaternion.copy(coreQInv).multiply(q);
       cubie.group.scale.setScalar(scale);
     }
+  }
+
+  // ---- Callouts and the live size readout ----
+  const callouts = makeCallouts(stage);
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  // The cube's real size, from where its pieces actually are (not from the screen). A solved
+  // mirror cube is a 57 mm box; scrambled, its lumpy shape is bigger, and it shrinks to 57.0 × 57.0
+  // as the solve finishes.
+  const corner = new THREE.Vector3();
+  function extents(useHome) {
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (const c of cube.cubies) {
+      for (let i = 0; i < 8; i++) {
+        corner.set(
+          c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
+          c.centre.y + (i & 2 ? 0.5 : -0.5) * c.size.y,
+          c.centre.z + (i & 4 ? 0.5 : -0.5) * c.size.z,
+        );
+        if (useHome) corner.add(c.home);
+        else corner.applyQuaternion(c.quat).add(c.pos);
+        min.min(corner);
+        max.max(corner);
+      }
+    }
+    return max.sub(min);
+  }
+  const mmPerUnit = 57 / extents(true).x;
+
+  // Smoothed outline of the cube on screen, shared by the callouts and the backdrop
+  const sbox = { left: 0, right: 0, top: 0, bottom: 0, ready: false };
+  let calloutAlpha = 0;
+
+  function statusText() {
+    const n = cube.userMoves.length;
+    if (cube.freePlay) return ['Free play', n ? `${n} move${n === 1 ? '' : 's'} · scroll to rewind` : 'twisting a layer'];
+    if (cube.isSolved) return ['Solved', 'every piece home'];
+    const out = flights.filter((fl) => fl.f > 0).length;
+    if (out) return [`Pieces out · ${out}`, out === 1 ? 'resting on a card' : 'resting on the cards'];
+    const left = cube.total - cube.applied;
+    if (left <= 3) return [`${left} move${left === 1 ? '' : 's'} left`, 'try finishing it by hand'];
+    return ['Drag a face', 'to twist a layer'];
+  }
+
+  function updateOverlays(dt, time) {
+    const W = view.width, H = view.height;
+
+    // Measure the cube (once it has assembled) and ease the outline toward it
+    if (cube.introDone) {
+      const box = cubeScreenBox();
+      if (Number.isFinite(box.top)) {
+        const k = sbox.ready ? 1 - Math.exp(-dt * 8) : 1;
+        for (const key of ['left', 'right', 'top', 'bottom']) sbox[key] += (box[key] - sbox[key]) * k;
+        sbox.ready = true;
+      }
+    }
+
+    // Callouts: only while the cube is resting in a section (they fade out while it travels)
+    const resting = 1 - clamp01(Math.min(anchorK, 1 - anchorK) * 6);
+    const want = wide.matches && cube.introDone && sbox.ready ? resting : 0;
+    calloutAlpha += (want - calloutAlpha) * (1 - Math.exp(-dt * (want > calloutAlpha ? 4 : 10)));
+    const idx = anchorK > 0.5 ? anchorSection + 1 : anchorSection;
+    const section = sections[Math.min(idx, sections.length - 1)];
+    const size = extents(false).multiplyScalar(mmPerUnit);
+    callouts.update({
+      box: sbox, W, H,
+      layout: section.dataset.side === 'center' ? 'side' : 'stack',
+      outer: anchor.x > 0.5 ? 1 : -1,
+      alpha: calloutAlpha,
+      texts: {
+        a: [`${pad2(idx)} · ${section.dataset.stage}`, `move ${pad2(cube.applied)} / ${cube.total}`],
+        b: statusText(),
+        width: `W ${size.x.toFixed(1)} mm`,
+        height: `H ${size.y.toFixed(1)} mm`,
+      },
+    });
+
+    // Backdrop: where the cube and the cursor are
+    const u = backdrop.uniforms;
+    u.uRes.value.set(W, H);
+    if (sbox.ready) {
+      u.uCube.value.set((sbox.left + sbox.right) / 2, (sbox.top + sbox.bottom) / 2);
+      u.uCubeR.value = Math.max(sbox.right - sbox.left, sbox.bottom - sbox.top) / 2;
+    } else {
+      u.uCube.value.set(anchor.x * W, anchor.y * H);
+      u.uCubeR.value = H * 0.25;
+    }
+    u.uMouse.value.set(pointer.px, pointer.py);
+    const mouseOn = finePointer && performance.now() - pointer.at < 3000 ? 1 : 0;
+    u.uMouseOn.value += (mouseOn - u.uMouseOn.value) * (1 - Math.exp(-dt * 3));
+    u.uScroll.value = window.scrollY;
+    u.uGrainSeed.value = reducedMotion ? 0 : (Math.floor(time * 12) * 37.31) % 997;
   }
 
   // ---- Animation loop ----
@@ -794,6 +905,9 @@ function init() {
     }
 
     followCube();
+    updateOverlays(dt, time);
+    renderer.clear();
+    renderer.render(backdrop.scene, backdrop.camera);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

@@ -142,6 +142,38 @@ ul, ol { padding: 0; list-style: none; }
 }
 .stage canvas:active { cursor: grabbing; }
 
+/* ---------- CAD callouts around the cube ---------- */
+.callouts {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  color: var(--muted);
+  transition: opacity .2s linear;
+}
+.co-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.co-lead, .co-dim {
+  fill: none; stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke;
+  /* Drawn in from nothing each time the callouts appear */
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  transition: stroke-dashoffset .9s cubic-bezier(.6, .05, .25, 1);
+}
+.co-dim { stroke: color-mix(in srgb, var(--muted) 75%, transparent); }
+.co-dot { fill: var(--accent); opacity: 0; transition: opacity .3s ease; }
+.callouts.is-on .co-lead, .callouts.is-on .co-dim { stroke-dashoffset: 0; }
+.callouts.is-on .co-dot { opacity: 1; }
+
+.co-label {
+  position: absolute; left: 0; top: 0; white-space: nowrap;
+  font: 500 .66rem/1.45 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  opacity: 0; transition: opacity .4s ease .45s;
+}
+.callouts.is-on .co-label { opacity: 1; }
+.co-label b { display: block; font-weight: 500; color: var(--ink-2); }
+.co-label span { display: block; color: var(--muted); letter-spacing: .06em; text-transform: none; }
+.co-label span:empty { display: none; }
+/* Dimension readouts sit on their line, with a patch of page colour cutting it */
+.co-measure { padding: 0 .45rem; background: var(--bg); }
+.co-measure b { color: var(--muted); letter-spacing: .08em; }
+.co-measure-v { writing-mode: vertical-rl; transform-origin: center; padding: .45rem 0; }
+
 /* "Solved by hand" message, drops in above the cube */
 .toast {
   position: absolute; left: 50%; top: 5.5rem; z-index: 2;
@@ -459,7 +491,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 @media (max-width: 900px) {
   :root { --col-w: 100%; }
   .stage { opacity: .15; pointer-events: none; }
-  .toast { display: none; }
+  .toast, .callouts { display: none; }
   main { pointer-events: auto; }
   section { min-height: auto; padding: 7rem 0 3rem; }
   section[data-side="right"] { margin-left: 0; }
@@ -490,5 +522,6 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   .card:hover, .tile:hover { transform: none; }
   .live-dot::after { animation: none; }
   .toast { transition: opacity .3s; transform: none; }
+  .co-lead, .co-dim { transition: none; }
   .js .exp-card.reveal { transition: opacity .3s; }
 }
