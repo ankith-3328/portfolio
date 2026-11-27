@@ -287,23 +287,32 @@ function init() {
     const side = s.dataset.side;
     if (side === 'left') return { x: 0.75, y: 0.5, size: 0.88 };
     if (side === 'right') return { x: 0.25, y: 0.5, size: 0.88 };
-    return s.classList.contains('hero') ? heroRest : { x: 0.5, y: 0.3, size: 0.74 };
+    return centred.get(s).rest;
   };
   let sectionMids = [];
-  // Hero: the cube must sit in the gap between the header and the text, with clear space around it.
-  // A first guess comes from the gap's size; after the intro, fitHero() measures the cube's real
-  // outline on screen and nudges its size and height until it fits.
-  const heroRest = { x: 0.5, y: 0.38, size: 0.9 };
-  const heroText = sections[0].querySelector('.eyebrow');
-  const heroRoom = { top: 0, bottom: 0 };
+  // Centred sections (hero, finale): the cube must sit in the gap between the header and the
+  // section's text, with clear space around it for the CAD marks. A first guess comes from the
+  // gap's size; then fitCentred() measures the cube's real outline on screen and nudges its size
+  // and height until it fits.
+  const ROOM_TOP = 124; // below the header, leaving space for the view label
+  const centred = new Map(
+    sections.filter((s) => s.dataset.side === 'center').map((s) => [s, {
+      rest: { x: 0.5, y: 0.38, size: 0.85 },
+      eyebrow: s.querySelector('.eyebrow'),
+    }]),
+  );
   const measureMids = () => {
     sectionMids = sections.map((s) => s.getBoundingClientRect().top + window.scrollY + s.offsetHeight / 2);
     const h = window.innerHeight;
-    heroRoom.top = 96;                                                    // below the header
-    heroRoom.bottom = heroText.offsetTop - sections[0].offsetTop - 40; // layout position: ignores the fade-in slide
-    const room = Math.max(heroRoom.bottom - heroRoom.top, h * 0.25);
-    heroRest.size = Math.min(1, room / (0.66 * h));
-    heroRest.y = (heroRoom.top + room / 2) / h;
+    for (const [s, c] of centred) {
+      // Where the text's top sits on screen while the cube rests here (layout position, so it
+      // ignores the fade-in slide): the hero rests at the top of the page, the finale at the bottom
+      const sectionTop = s === sections[0] ? 0 : h - s.offsetHeight;
+      const textTop = c.eyebrow.offsetTop - s.offsetTop + sectionTop;
+      const room = Math.max(textTop - 40 - ROOM_TOP, h * 0.25);
+      c.rest.size = Math.min(1, room / (0.66 * h));
+      c.rest.y = (ROOM_TOP + room / 2) / h;
+    }
   };
   window.addEventListener('resize', measureMids);
   new ResizeObserver(measureMids).observe(document.body);
@@ -333,21 +342,25 @@ function init() {
     return { top, bottom, left, right };
   }
 
-  // While resting in the hero, keep the real outline inside the gap above the text
-  function fitHero(dt) {
-    if (!wide.matches || !cube.introDone || anchorSection !== 0 || anchorK > 0) return;
+  // While resting in a centred section, keep the real outline inside the gap above its text
+  function fitCentred(dt) {
+    if (!wide.matches || !cube.introDone || cube.celebration !== Infinity) return; // not during the lid flourish
+    const s = anchorK === 0 ? sections[anchorSection] : anchorK === 1 ? sections[anchorSection + 1] : null;
+    const c = s && centred.get(s);
+    if (!c) return;
     cube.object.updateWorldMatrix(true, true);
     const box = cubeScreenBox();
     const height = box.bottom - box.top;
     if (!(height > 0)) return;
-    const room = heroRoom.bottom - heroRoom.top;
+    const bottom = c.eyebrow.getBoundingClientRect().top - 40;
+    const room = Math.max(bottom - ROOM_TOP, view.height * 0.2);
     const rate = 1 - Math.exp(-dt * 5);
     // Shrink quickly if it is too big, grow back slowly (it changes shape as it turns)
     const want = THREE.MathUtils.clamp(room / height, 0.85, 1.15);
     const grow = want < 1 ? rate : rate * 0.3;
-    heroRest.size = Math.min(1.05, heroRest.size * (1 + (want - 1) * grow));
-    const off = (heroRoom.top + room / 2) - (box.top + box.bottom) / 2;
-    heroRest.y += (off / view.height) * rate;
+    c.rest.size = Math.min(1.05, c.rest.size * (1 + (want - 1) * grow));
+    const off = (ROOM_TOP + room / 2) - (box.top + box.bottom) / 2;
+    c.rest.y += (off / view.height) * rate;
   }
 
   let anchorSection = 0;
@@ -701,99 +714,6 @@ function init() {
     }
   }
 
-  // ---- The email card, delivered by a piece from the solved cube ----
-  // A copy of a corner piece (so the cube stays whole) rises out of the gap under the open lid,
-  // arcs to the card's tile, shrinks into it, and the card unfolds from the tile.
-  const mailCard = document.querySelector('.mail-card');
-  const mailTile = mailCard?.querySelector('.mail-tile');
-  const mailSource = cube.cubies.find((c) => c.home.equals(new THREE.Vector3(1, 1, 1)));
-  // (userData points back at the cube, which clone() can't copy: leave it off the copy)
-  const { userData } = mailSource.group;
-  mailSource.group.userData = {};
-  const mailPiece = mailSource.group.clone();
-  mailSource.group.userData = userData;
-  mailPiece.visible = false;
-  scene.add(mailPiece);
-  const MAIL_FLIGHT = 1.05; // seconds
-  let mailFlight = null;
-
-  function launchMail() {
-    if (!mailCard?.classList.contains('is-waiting')) return;
-    if (!wide.matches || reducedMotion) {
-      window.dispatchEvent(new CustomEvent('cube:solved')); // the page just fades the card in
-      return;
-    }
-    window.dispatchEvent(new CustomEvent('mail:incoming'));
-    const r = () => Math.random() - 0.5;
-    mailFlight = { t: 0, spinAxis: new THREE.Vector3(r(), r(), r()).normalize() };
-  }
-
-  function unfoldMail() {
-    mailCard.classList.remove('is-waiting');
-    const card = mailCard.getBoundingClientRect();
-    const tile = mailTile.getBoundingClientRect();
-    mailCard.style.transformOrigin =
-      `${tile.left + tile.width / 2 - card.left}px ${tile.top + tile.height / 2 - card.top}px`;
-    mailCard.animate([
-      { transform: 'scale(.1)', opacity: 0 },
-      { transform: 'scale(1.03)', opacity: 1, offset: 0.65 },
-      { transform: 'scale(1)', opacity: 1 },
-    ], { duration: 620, easing: 'cubic-bezier(.2,.7,.2,1)' });
-    mailTile.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }],
-      { duration: 480, delay: 200, easing: 'cubic-bezier(.3,1.6,.5,1)' });
-  }
-
-  const mailTmp = { start: new THREE.Vector3(), rise: new THREE.Vector3(), target: new THREE.Vector3(),
-    p: new THREE.Vector3(), q: new THREE.Quaternion(), land: new THREE.Quaternion(), spinQ: new THREE.Quaternion() };
-  function updateMail(dt) {
-    if (!mailFlight) return;
-    mailFlight.t += dt;
-    const k = clamp01(mailFlight.t / MAIL_FLIGHT);
-    if (k >= 1) {
-      mailPiece.visible = false;
-      mailFlight = null;
-      unfoldMail();
-      return;
-    }
-    const { start, rise, target, p, q, land, spinQ } = mailTmp;
-
-    // Out of the gap under the lid, on the side facing the viewer
-    const { centre, d } = viewerDirection();
-    start.copy(centre).add(new THREE.Vector3(0, 0.9, 0)).addScaledVector(d, 0.6);
-    rise.copy(start).add(new THREE.Vector3(0, 0.7, 0)).addScaledVector(d, 1.6); // toward the viewer
-
-    // The card's tile, as a point between the camera and the cube
-    const rect = mailTile.getBoundingClientRect();
-    ndc.set(((rect.left + rect.width / 2) / window.innerWidth) * 2 - 1,
-      -((rect.top + rect.height / 2) / window.innerHeight) * 2 + 1);
-    raycaster.setFromCamera(ndc, camera);
-    const depth = camera.position.length() * 0.72;
-    target.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, depth);
-    const pxPerUnit = window.innerHeight / (2 * depth * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
-    const size = Math.max(mailSource.size.x, mailSource.size.y, mailSource.size.z);
-    const landScale = (rect.width * 1.1) / (size * pxPerUnit);
-
-    // 0 → 0.22: rise out of the cube, growing.  0.22 → 1: arc down to the tile, shrinking.
-    const pop = ease(clamp01(k / 0.22));
-    const fly = ease(clamp01((k - 0.22) / 0.78));
-    if (k < 0.22) {
-      p.lerpVectors(start, rise, pop);
-    } else {
-      const lift = new THREE.Vector3(0, 0.6, 0);
-      bezier(rise, rise.clone().add(lift), target.clone().add(lift), target, fly, p);
-    }
-    mailPiece.position.copy(p);
-    mailPiece.scale.setScalar(k < 0.22 ? 0.3 + 0.7 * pop : THREE.MathUtils.lerp(1, landScale, fly));
-
-    // From the cube's orientation to facing the camera, tumbling once on the way
-    spin.getWorldQuaternion(q).multiply(mailSource.quat);
-    land.copy(camera.quaternion).multiply(flyTmp.landTilt);
-    q.slerp(land, fly);
-    spinQ.setFromAxisAngle(mailFlight.spinAxis, Math.PI * 2 * fly);
-    mailPiece.quaternion.copy(q).multiply(spinQ);
-    mailPiece.visible = true;
-  }
-
   // ---- Callouts and the live size readout ----
   const callouts = makeCallouts(stage);
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -857,17 +777,23 @@ function init() {
     const idx = anchorK > 0.5 ? anchorSection + 1 : anchorSection;
     const section = sections[Math.min(idx, sections.length - 1)];
     const size = extents(false).multiplyScalar(mmPerUnit);
+    const deg = cube.turnDegrees;
+    const turning = deg > 1 && deg < 89 ? ` · turning ${String(Math.round(deg)).padStart(2, '\u2007')}°` : '';
+    const block = document.querySelector('.title-block.is-drawn');
     callouts.update({
       box: sbox, W, H,
       layout: section.dataset.side === 'center' ? 'side' : 'stack',
       outer: anchor.x > 0.5 ? 1 : -1,
       alpha: calloutAlpha,
       texts: {
-        a: [`${pad2(idx)} · ${section.dataset.stage}`, `move ${pad2(cube.applied)} / ${cube.total}`],
+        a: [`${pad2(idx)} · ${section.dataset.stage}`, `move ${pad2(cube.applied)} / ${cube.total}${turning}`],
+        view: idx === sections.length - 1 ? 'View A · Iso · Solved' : 'View A · Iso',
         b: statusText(),
         width: `W ${size.x.toFixed(1)} mm`,
         height: `H ${size.y.toFixed(1)} mm`,
       },
+      // In the finale, point at the contact title block once it has been drawn
+      target: idx === sections.length - 1 && block ? block.getBoundingClientRect() : null,
     });
 
     // Backdrop: where the cube and the cursor are
@@ -903,7 +829,7 @@ function init() {
     // Glide the cube toward this scroll position's place on screen, turning as it travels
     updateAnchor();
     placeCamera();
-    fitHero(dt);
+    fitCentred(dt);
     travel.rotation.y = anchor.turn;
 
     // Free play holds the scroll solve. Scroll noticeably away and the visitor's moves rewind.
@@ -929,8 +855,8 @@ function init() {
       // Open the lid on the side facing the viewer
       const toCube = cube.object.matrixWorld.clone().invert();
       cube.celebrate(viewerDirection().d.transformDirection(toCube));
-      // Once the lid is open, a gold piece comes out of the gap and delivers the email card
-      setTimeout(launchMail, reducedMotion ? 0 : LAUNCH_AT * 1000);
+      // Once the lid is open, tell the page: the contact title block draws itself in
+      setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved')), reducedMotion ? 0 : LAUNCH_AT * 1000);
     }
     if (!cube.freePlay) wasSolved = solved;
 
@@ -942,7 +868,6 @@ function init() {
     cube.explode = explode;
     cube.draw();
     updateFlights();
-    updateMail(dt);
 
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);

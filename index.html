@@ -218,15 +218,18 @@
       <p class="eyebrow reveal">05 · Solved</p>
       <h2 id="contact-title" class="reveal">Solved.</h2>
       <p class="lede reveal">The cube’s done. If you’re building something with backends or LLMs, I’d like to hear about it.</p>
-      <div class="mail-card">
-        <a class="mail-link" href="mailto:ankithcs3328@gmail.com">
-          <span class="mail-tile" aria-hidden="true"></span>
-          <span class="mail-text">
-            <span class="mail-label">Email</span>
-            <span class="mail-addr">ankithcs3328@gmail.com</span>
-          </span>
+      <!-- The contact details as an engineering drawing's title block. It draws itself in, line by
+           line, once the cube is solved (ui.js). -->
+      <div class="title-block">
+        <div class="tb-cell tb-by"><span class="tb-k">Drawn by</span><span class="tb-v">Ankith C S</span></div>
+        <a class="tb-cell tb-mail" href="mailto:ankithcs3328@gmail.com">
+          <span class="tb-k">Contact</span><span class="tb-v">ankithcs3328@gmail.com</span>
         </a>
-        <button class="copy-btn" type="button" data-copy="ankithcs3328@gmail.com" aria-label="Copy email address">Copy</button>
+        <button class="tb-cell tb-copy" type="button" data-copy="ankithcs3328@gmail.com" aria-label="Copy email address">Copy</button>
+        <div class="tb-cell tb-sheet"><span class="tb-k">Sheet</span><span class="tb-v">05 / 05</span></div>
+        <div class="tb-cell tb-scale"><span class="tb-k">Scale</span><span class="tb-v">1 : 1</span></div>
+        <div class="tb-cell tb-status"><span class="tb-k">Status</span><span class="tb-v">✓ Solved</span></div>
+        <svg class="tb-lines" aria-hidden="true"></svg>
       </div>
     </section>
 

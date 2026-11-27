@@ -315,6 +315,11 @@ export class MirrorCube {
   }
 
   get introDone() { return this.introTime >= this.introLength; }
+  // How far the layer that is turning right now has turned, in degrees (0 when none is)
+  get turnDegrees() {
+    const t = this.#turning;
+    return t ? Math.abs(t.angle) * 180 / Math.PI : 0;
+  }
   get total() { return this.solution.length; }
   get isSolved() { return this.applied === this.total; }
 

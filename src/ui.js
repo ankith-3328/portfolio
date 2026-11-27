@@ -32,26 +32,61 @@
     }
   });
 
-  // ---------- The email card waits for the solved cube ----------
-  // When the cube is solved, a gold piece flies out of it and the card unfolds from that piece
-  // (main.js, which says 'mail:incoming' when it takes over). Without the 3D, or if the solve
-  // never comes, the card simply fades in.
-  const mailCard = document.querySelector('.mail-card');
+  // ---------- The contact title block draws itself in when the cube is solved ----------
+  // Its ruled lines are generated from where the cells actually sit, so they match any layout:
+  // the outer frame first, then each divider, then the text fades in.
+  const block = document.querySelector('.title-block');
   const contact = document.querySelector('#contact');
-  if (mailCard && !reducedMotion) {
-    mailCard.classList.add('is-waiting');
-    let delivered = false;
+  const SVG = 'http://www.w3.org/2000/svg';
 
-    const showPlainly = () => {
-      if (delivered) return;
-      delivered = true;
-      mailCard.classList.remove('is-waiting');
-      mailCard.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }],
-        { duration: 600, easing: 'cubic-bezier(.2,.7,.2,1)' });
+  function ruleBlock() {
+    const svg = block.querySelector('.tb-lines');
+    const box = block.getBoundingClientRect();
+    const W = Math.round(box.width), H = Math.round(box.height);
+    const lines = [];
+    const seen = new Set();
+    for (const cell of block.querySelectorAll('.tb-cell')) {
+      const r = cell.getBoundingClientRect();
+      const x = Math.round(r.right - box.left), y = Math.round(r.bottom - box.top);
+      const x0 = Math.round(r.left - box.left), y0 = Math.round(r.top - box.top);
+      // Each cell contributes its right and bottom edges, unless they are the frame itself
+      if (x < W - 1 && !seen.has(`v${x},${y0}`)) { seen.add(`v${x},${y0}`); lines.push(`M${x},${y0} V${y}`); }
+      if (y < H - 1 && !seen.has(`h${y},${x0}`)) { seen.add(`h${y},${x0}`); lines.push(`M${x0},${y} H${x}`); }
+    }
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.replaceChildren();
+    const path = (d, cls, delay) => {
+      const p = document.createElementNS(SVG, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('pathLength', '1');
+      p.setAttribute('class', cls);
+      p.style.transitionDelay = `${delay}ms`;
+      svg.appendChild(p);
     };
+    path(`M0.5,0.5 H${W - 0.5} V${H - 0.5} H0.5 Z`, 'tb-frame', 0);
+    lines.forEach((d, i) => path(d, 'tb-rule', 420 + i * 90));
+    block.style.setProperty('--text-delay', `${520 + lines.length * 90}ms`);
+  }
 
-    window.addEventListener('mail:incoming', () => { delivered = true; });
-    window.addEventListener('cube:solved', showPlainly);
+  if (block) {
+    let drawn = false;
+    const draw = () => {
+      if (drawn) return;
+      drawn = true;
+      block.classList.remove('is-waiting');
+      ruleBlock();
+      // Next frame, so the lines start from nothing and draw in
+      requestAnimationFrame(() => requestAnimationFrame(() => block.classList.add('is-drawn')));
+    };
+    // Keep the lines on the cells if the layout changes later
+    new ResizeObserver(() => { if (drawn) ruleBlock(); }).observe(block);
+
+    if (reducedMotion) {
+      draw();
+    } else {
+      block.classList.add('is-waiting');
+      window.addEventListener('cube:solved', draw);
+    }
 
     // Safety net: never leave the email hidden (no 3D, or the solve never fires)
     if ('IntersectionObserver' in window) {
@@ -60,10 +95,10 @@
         clearTimeout(timer);
         if (!entry.isIntersecting) return;
         const noCube = !root.classList.contains('cube-ready') || root.classList.contains('no-webgl');
-        timer = setTimeout(showPlainly, noCube ? 300 : 4500);
+        timer = setTimeout(draw, noCube ? 300 : 4500);
       }, { threshold: 0.4 }).observe(contact);
     } else {
-      showPlainly();
+      draw();
     }
   }
 
