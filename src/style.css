@@ -25,6 +25,8 @@
 
   --col-w: min(44rem, 46vw); /* a section's text column; the cube travels to the other side */
   --pad: clamp(1.5rem, 5vw, 5rem);
+  /* The mirror-cube grid as a CSS tile, for phones and browsers without WebGL */
+  --grid-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='264' height='264'%3E%3Cg fill='none' stroke='%233A3530'%3E%3Cpath stroke-opacity='.08' d='M.5 0V264M132.5 0V264M0 .5H264M0 132.5H264'/%3E%3Cpath stroke-opacity='.035' d='M27.5 0V264M71.5 0V264M192.5 0V264M236.5 0V264M0 32.5H264M0 76.5H264M0 187.5H264M0 231.5H264'/%3E%3C/g%3E%3Cg fill='%233A3530' fill-opacity='.18'%3E%3Ccircle cx='.5' cy='.5' r='1.6'/%3E%3Ccircle cx='132.5' cy='.5' r='1.6'/%3E%3Ccircle cx='.5' cy='132.5' r='1.6'/%3E%3Ccircle cx='132.5' cy='132.5' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 /* Dark theme: warm espresso browns, not cold black */
@@ -43,6 +45,7 @@
   --metal: linear-gradient(135deg, #FCEBC0 0%, #D9A441 50%, #8B6A2E 100%);
   --metal-edge: rgba(139, 106, 46, .45);
   --metal-glow: rgba(217, 164, 65, .6);
+  --grid-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='264' height='264'%3E%3Cg fill='none' stroke='%23ECE5DA'%3E%3Cpath stroke-opacity='.06' d='M.5 0V264M132.5 0V264M0 .5H264M0 132.5H264'/%3E%3Cpath stroke-opacity='.028' d='M27.5 0V264M71.5 0V264M192.5 0V264M236.5 0V264M0 32.5H264M0 76.5H264M0 187.5H264M0 231.5H264'/%3E%3C/g%3E%3Cg fill='%23ECE5DA' fill-opacity='.16'%3E%3Ccircle cx='.5' cy='.5' r='1.6'/%3E%3Ccircle cx='132.5' cy='.5' r='1.6'/%3E%3Ccircle cx='.5' cy='132.5' r='1.6'/%3E%3Ccircle cx='132.5' cy='132.5' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -85,12 +88,17 @@ ul, ol { padding: 0; list-style: none; }
 .site-header {
   position: fixed; inset: 0 0 auto 0; z-index: 20;
   display: flex; align-items: center; justify-content: flex-end;
-  padding: 1.1rem var(--pad);
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  padding: 1rem var(--pad);
+  pointer-events: none; /* only the pill and the toggle take clicks */
 }
-.nav { display: flex; gap: 1.75rem; }
+.site-header > * { pointer-events: auto; }
+/* The nav floats in a small frosted pill, so the page (and its grid) runs right to the top */
+.nav {
+  display: flex; gap: 1.6rem; padding: .5rem 1.25rem;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 999px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
 .nav a {
   position: relative;
   font-size: .9rem; color: var(--ink-2); text-decoration: none;
@@ -108,8 +116,10 @@ ul, ol { padding: 0; list-style: none; }
 /* Light / dark switch */
 .theme-toggle {
   display: grid; place-items: center;
-  width: 34px; height: 34px; margin-left: 1.75rem;
-  color: var(--ink-2); background: none; cursor: pointer;
+  width: 38px; height: 38px; margin-left: .75rem;
+  color: var(--ink-2); cursor: pointer;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--line); border-radius: 999px;
   transition: color .2s, border-color .2s, transform .5s cubic-bezier(.2, .7, .2, 1);
 }
@@ -142,53 +152,34 @@ ul, ol { padding: 0; list-style: none; }
 }
 .stage canvas:active { cursor: grabbing; }
 
-/* ---------- CAD callouts around the cube ---------- */
+/* ---------- CAD touch around the cube: brackets, one label, one measurement ---------- */
 .callouts {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  color: var(--muted);
-  transition: opacity .2s linear;
+  transition: opacity .25s linear;
 }
 .co-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.co-lead, .co-dim {
-  fill: none; stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke;
-  /* Drawn in from nothing each time the callouts appear */
+.co-bracket, .co-measure-line {
+  fill: none; vector-effect: non-scaling-stroke;
   stroke-dasharray: 1; stroke-dashoffset: 1;
   transition: stroke-dashoffset .9s cubic-bezier(.6, .05, .25, 1);
 }
-.co-dim { stroke: color-mix(in srgb, var(--muted) 75%, transparent); }
-.co-bracket {
-  fill: none; stroke: var(--ink-2); stroke-width: 1.25; vector-effect: non-scaling-stroke;
-  stroke-dasharray: 1; stroke-dashoffset: 1;
-  transition: stroke-dashoffset 1s cubic-bezier(.6, .05, .25, 1);
-}
-.callouts.is-on .co-bracket { stroke-dashoffset: 0; }
-/* Centre lines: the drafting dash-dot, faded in rather than drawn */
-.co-centre {
-  fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 10 3 2 3;
-  vector-effect: non-scaling-stroke; opacity: 0; transition: opacity .6s ease .3s;
-}
-.callouts.is-on .co-centre { opacity: .55; }
-/* The finale's reference leader to the title block draws in on its own, a little after */
-.callouts.is-on .co-ref { stroke-dashoffset: 1; transition-duration: 1.2s; transition-delay: .2s; }
-.callouts.is-on .co-ref.is-drawn { stroke-dashoffset: 0; }
-.co-dot { fill: var(--accent); opacity: 0; transition: opacity .3s ease; }
-.callouts.is-on .co-lead, .callouts.is-on .co-dim { stroke-dashoffset: 0; }
-.callouts.is-on .co-dot { opacity: 1; }
+.co-bracket { stroke: color-mix(in srgb, var(--ink-2) 70%, transparent); stroke-width: 1; }
+.co-measure-line { stroke: color-mix(in srgb, var(--muted) 60%, transparent); stroke-width: 1; transition-delay: .15s; }
+.callouts.is-on .co-bracket, .callouts.is-on .co-measure-line { stroke-dashoffset: 0; }
 
-.co-label {
+.co-tag, .co-size {
   position: absolute; left: 0; top: 0; white-space: nowrap;
-  font: 500 .66rem/1.45 var(--mono); letter-spacing: .1em; text-transform: uppercase;
-  opacity: 0; transition: opacity .4s ease .45s;
+  font-family: var(--mono); opacity: 0; transition: opacity .4s ease .35s;
 }
-.callouts.is-on .co-label { opacity: 1; }
-.co-label b { display: block; font-weight: 500; color: var(--ink-2); }
-.co-label span { display: block; color: var(--muted); letter-spacing: .06em; text-transform: none; }
-.co-label span:empty { display: none; }
-/* Dimension readouts sit on their line, with a patch of page colour cutting it */
-.co-measure { padding: 0 .45rem; background: var(--bg); }
-.co-view b { color: var(--accent); font-size: .58rem; letter-spacing: .18em; }
-.co-measure b { color: var(--muted); letter-spacing: .08em; }
-.co-measure-v { writing-mode: vertical-rl; transform-origin: center; padding: .45rem 0; }
+.callouts.is-on .co-tag, .callouts.is-on .co-size { opacity: 1; }
+.co-tag b, .co-tag span, .co-tag em { display: block; font-style: normal; }
+.co-tag b { font: 500 .66rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+.co-tag span { font-size: .66rem; line-height: 1.5; letter-spacing: .03em; color: var(--muted); }
+.co-tag em { margin-top: .15rem; font-size: .62rem; letter-spacing: .03em; color: var(--accent); }
+.co-size {
+  padding: 0 .4rem; font-size: .6rem; line-height: 16px; letter-spacing: .06em; color: var(--muted);
+  background: var(--bg);
+}
 
 /* "Solved by hand" message, drops in above the cube */
 .toast {
@@ -504,6 +495,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* ---------- No WebGL: drop the cube, center the content ---------- */
 .no-webgl .stage { display: none; }
+.no-webgl body { background-image: var(--grid-tile); }
 .no-webgl main { max-width: 50rem; margin: 0 auto; pointer-events: auto; }
 .no-webgl section { width: auto; margin-inline: 0; }
 
@@ -512,6 +504,8 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   :root { --col-w: 100%; }
   .stage { opacity: .15; pointer-events: none; }
   .toast, .callouts { display: none; }
+  /* The 3D canvas is a faint backdrop here, so the grid comes from CSS instead */
+  body { background-image: var(--grid-tile); }
   main { pointer-events: auto; }
   section { min-height: auto; padding: 7rem 0 3rem; }
   section[data-side="right"] { margin-left: 0; }
@@ -542,6 +536,6 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   .card:hover, .tile:hover { transform: none; }
   .live-dot::after { animation: none; }
   .toast { transition: opacity .3s; transform: none; }
-  .co-lead, .co-dim { transition: none; }
+  .co-bracket, .co-measure-line { transition: none; }
   .js .exp-card.reveal { transition: opacity .3s; }
 }

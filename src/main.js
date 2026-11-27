@@ -294,7 +294,7 @@ function init() {
   // section's text, with clear space around it for the CAD marks. A first guess comes from the
   // gap's size; then fitCentred() measures the cube's real outline on screen and nudges its size
   // and height until it fits.
-  const ROOM_TOP = 124; // below the header, leaving space for the view label
+  const ROOM_TOP = 108; // below the header
   const centred = new Map(
     sections.filter((s) => s.dataset.side === 'center').map((s) => [s, {
       rest: { x: 0.5, y: 0.38, size: 0.85 },
@@ -344,7 +344,7 @@ function init() {
 
   // While resting in a centred section, keep the real outline inside the gap above its text
   function fitCentred(dt) {
-    if (!wide.matches || !cube.introDone || cube.celebration !== Infinity) return; // not during the lid flourish
+    if (!wide.matches || !cube.introDone || cube.celebration !== Infinity) return; // not during the solve glint
     const s = anchorK === 0 ? sections[anchorSection] : anchorK === 1 ? sections[anchorSection + 1] : null;
     const c = s && centred.get(s);
     if (!c) return;
@@ -746,15 +746,16 @@ function init() {
   const sbox = { left: 0, right: 0, top: 0, bottom: 0, ready: false };
   let calloutAlpha = 0;
 
+  // One short line on what is going on, or what you can do
   function statusText() {
     const n = cube.userMoves.length;
-    if (cube.freePlay) return ['Free play', n ? `${n} move${n === 1 ? '' : 's'} · scroll to rewind` : 'twisting a layer'];
-    if (cube.isSolved) return ['Solved', 'every piece home'];
+    if (cube.freePlay) return n ? `free play · ${n} move${n === 1 ? '' : 's'}` : 'free play';
+    if (cube.isSolved) return 'every piece home';
     const out = flights.filter((fl) => fl.f > 0).length;
-    if (out) return [`Pieces out · ${out}`, out === 1 ? 'resting on a card' : 'resting on the cards'];
+    if (out) return `${out} piece${out === 1 ? '' : 's'} on the cards`;
     const left = cube.total - cube.applied;
-    if (left <= 3) return [`${left} move${left === 1 ? '' : 's'} left`, 'try finishing it by hand'];
-    return ['Drag a face', 'to twist a layer'];
+    if (left <= 3) return `${left} to go · finish it by hand`;
+    return 'drag a face to twist';
   }
 
   function updateOverlays(dt, time) {
@@ -776,24 +777,19 @@ function init() {
     calloutAlpha += (want - calloutAlpha) * (1 - Math.exp(-dt * (want > calloutAlpha ? 4 : 10)));
     const idx = anchorK > 0.5 ? anchorSection + 1 : anchorSection;
     const section = sections[Math.min(idx, sections.length - 1)];
-    const size = extents(false).multiplyScalar(mmPerUnit);
-    const deg = cube.turnDegrees;
-    const turning = deg > 1 && deg < 89 ? ` · turning ${String(Math.round(deg)).padStart(2, '\u2007')}°` : '';
-    const block = document.querySelector('.title-block.is-drawn');
+    const width = extents(false).x * mmPerUnit;
+    const layout = section.dataset.side === 'center' ? 'side' : 'stack';
     callouts.update({
-      box: sbox, W, H,
-      layout: section.dataset.side === 'center' ? 'side' : 'stack',
+      box: sbox, W, layout,
       outer: anchor.x > 0.5 ? 1 : -1,
       alpha: calloutAlpha,
       texts: {
-        a: [`${pad2(idx)} · ${section.dataset.stage}`, `move ${pad2(cube.applied)} / ${cube.total}${turning}`],
-        view: idx === sections.length - 1 ? 'View A · Iso · Solved' : 'View A · Iso',
-        b: statusText(),
-        width: `W ${size.x.toFixed(1)} mm`,
-        height: `H ${size.y.toFixed(1)} mm`,
+        title: `${pad2(idx)} · ${section.dataset.stage}`,
+        // Beside a text column the width has its own measurement line; centred, it goes here
+        sub: `${pad2(cube.applied)} / ${cube.total} moves${layout === 'side' ? ` · ${width.toFixed(1)} mm` : ''}`,
+        status: statusText(),
+        width: `${width.toFixed(1)} mm`,
       },
-      // In the finale, point at the contact title block once it has been drawn
-      target: idx === sections.length - 1 && block ? block.getBoundingClientRect() : null,
     });
 
     // Backdrop: where the cube and the cursor are
@@ -852,10 +848,10 @@ function init() {
     // Celebrate the moment the cube becomes solved
     const solved = cube.isSolved && !cube.freePlay;
     if (solved && !wasSolved && cube.introDone) {
-      // Open the lid on the side facing the viewer
+      // The glint crosses the side facing the viewer
       const toCube = cube.object.matrixWorld.clone().invert();
       cube.celebrate(viewerDirection().d.transformDirection(toCube));
-      // Once the lid is open, tell the page: the contact title block draws itself in
+      // As the glint finishes, tell the page: the contact title block draws itself in
       setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved')), reducedMotion ? 0 : LAUNCH_AT * 1000);
     }
     if (!cube.freePlay) wasSolved = solved;
@@ -917,7 +913,8 @@ function init() {
     followCube();
     updateOverlays(dt, time);
     renderer.clear();
-    renderer.render(backdrop.scene, backdrop.camera);
+    // On narrow screens the grid comes from CSS (the canvas is only a faint backdrop there)
+    if (wide.matches) renderer.render(backdrop.scene, backdrop.camera);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

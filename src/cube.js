@@ -5,7 +5,7 @@
 // progress 7.4 = "7 moves done, the 8th is 40% through". Scrolling up undoes moves.
 //
 // Plus two bits of theatre: the cube assembles itself on load (the core drops in, then pieces split
-// off one another, from the core outward), and it does a victory flourish when solved.
+// off one another, from the core outward), and a glint of light sweeps across it when solved.
 //
 // It is also playable: grab a face and twist a layer yourself (free play). While you are playing,
 // the scroll solve waits; main.js undoes your moves when you scroll again.
@@ -77,23 +77,7 @@ function roundedRect(w, h, radius) {
 
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const smooth = (t) => t * t * (3 - 2 * t);
-const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
-const easeInCubic = (t) => t * t * t;
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
-
-// How open the lid is (0 = shut, 1 = open) at time t of the flourish
-function lidOpen(t) {
-  if (t <= 0) return 0;
-  if (t < OPEN_END) return easeOutBack(t / OPEN_END);
-  if (t < CLOSE_START) return 1;
-  if (t < CLOSE_END) return 1 - easeInCubic((t - CLOSE_START) / (CLOSE_END - CLOSE_START));
-  if (t < SETTLE_END) {
-    const k = (t - CLOSE_END) / (SETTLE_END - CLOSE_END);
-    return 0.07 * Math.sin(Math.PI * k) * (1 - k); // small bounce as it lands
-  }
-  return 0;
-}
 
 // Intro: self-assembly, in seconds from page load.
 // The bare core (hub and axles) drops in and bounces. Then the pieces grow outward in generations,
@@ -113,17 +97,10 @@ const snap = (t) => 1 + 3.6 * Math.pow(t - 1, 3) + 2.6 * Math.pow(t - 1, 2);
 // A quick, damped squash: 0 → up → 0 over `length` seconds after it starts
 const pulse = (x, length) => (x > 0 && x < length ? Math.sin(Math.PI * x / length) * (1 - x / length) : 0);
 
-// Victory flourish: a glint of light sweeps across the now-perfect box, then the top layer
-// hinges open like a lid, the email pops out, and the lid closes.
-const GLINT = 0.55;             // the glint's sweep; the lid waits for it (times below are after it)
-const OPEN_END = 0.32;          // lid fully open
-export const LAUNCH_AT = GLINT + 0.26;  // the email leaves through the gap (seconds after solving)
-const CLOSE_START = 0.85;       // lid starts closing
-const CLOSE_END = 1.12;         // lid shut
-const SETTLE_END = 1.35;        // tiny bounce after it shuts
-const LID_ANGLE = 0.6;          // how far the lid tips open (radians, ~34°)
-const LID_LIFT = 0.12;          // and how much it rises
-const CELEBRATION_LENGTH = GLINT + 1.4;
+// When solved: a glint of light sweeps across the now-perfect box, and the reflections spin once
+const GLINT = 0.55;                 // the glint's sweep, seconds
+export const LAUNCH_AT = GLINT;     // when the page may show what comes after the solve
+const CELEBRATION_LENGTH = GLINT;
 // Scroll turns: smooth each quarter-turn and leave a short pause between moves
 const scrollEase = (t) => smooth(clamp01((t - 0.12) / 0.76));
 
@@ -153,7 +130,7 @@ export class MirrorCube {
     this.popLight.position.set(2.5, 2.5, 3.5);
     this.object.add(this.popLight);
     this.celebration = Infinity; // seconds since the last "solved" flourish
-    this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
+    this.glintToward = new THREE.Vector3(0, 0, 1); // the side facing the viewer: the glint crosses it
     this.calm = !intro;          // reduced motion: keep only the gentle parts
 
     // Free play
@@ -315,11 +292,6 @@ export class MirrorCube {
   }
 
   get introDone() { return this.introTime >= this.introLength; }
-  // How far the layer that is turning right now has turned, in degrees (0 when none is)
-  get turnDegrees() {
-    const t = this.#turning;
-    return t ? Math.abs(t.angle) * 180 / Math.PI : 0;
-  }
   get total() { return this.solution.length; }
   get isSolved() { return this.applied === this.total; }
 
@@ -425,7 +397,7 @@ export class MirrorCube {
   // towardViewer: direction from the cube to the camera, in the cube's own coordinates
   celebrate(towardViewer) {
     this.celebration = 0;
-    if (towardViewer) this.lidToward.set(towardViewer.x, 0, towardViewer.z).normalize();
+    if (towardViewer) this.glintToward.set(towardViewer.x, 0, towardViewer.z).normalize();
   }
 
   // 'gold' or 'silver'. The colours blend over a moment unless instant.
@@ -479,43 +451,22 @@ export class MirrorCube {
       ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], moving.angle)
       : null;
 
-    // Victory flourish: the top layer tips open on a hinge along its far edge
-    const t = this.celebration;
-    const open = !this.calm && t < CELEBRATION_LENGTH ? lidOpen(t - GLINT) : 0;
-
     // The glint: a bright light passes diagonally across the faces toward the viewer
     const g = this.glint;
     this.glintLight.intensity = g === null ? 0 : 70 * Math.sin(Math.PI * g) ** 2;
     if (g !== null) {
-      const d = this.lidToward;
+      const d = this.glintToward;
       const across = new THREE.Vector3().crossVectors(AXES.y, d).normalize();
       const s = -1 + 2 * smooth(g);
       this.glintLight.position.copy(d).multiplyScalar(2.4)
         .addScaledVector(across, 2.6 * s).addScaledVector(AXES.y, 2.2 - 3.2 * smooth(g));
     }
-    let lid = null;
-    if (open !== 0) {
-      const d = this.lidToward;
-      lid = {
-        // far bottom edge of the top layer
-        pivot: new THREE.Vector3(-d.x * 1.5 + OFFSET.x, 0.5, -d.z * 1.5 + OFFSET.z),
-        turn: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(d, AXES.y).normalize(), LID_ANGLE * open),
-        lift: LID_LIFT * open,
-      };
-    }
-
     for (const c of this.cubies) {
       c.group.position.copy(c.pos);
       c.group.quaternion.copy(c.quat);
       if (moving && this.#inLayer(c, moving.axis, moving.layer)) {
         c.group.position.applyQuaternion(partial);
         c.group.quaternion.premultiply(partial);
-      }
-
-      if (lid && Math.round(c.pos.y) === 1) {
-        c.group.position.sub(lid.pivot).applyQuaternion(lid.turn).add(lid.pivot);
-        c.group.position.y += lid.lift;
-        c.group.quaternion.premultiply(lid.turn);
       }
 
       // Exploded view: every piece slides straight out from the core
