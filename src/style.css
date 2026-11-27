@@ -401,15 +401,9 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* Contact */
 .contact h2 { font-size: clamp(3.5rem, 8vw, 6.5rem); font-style: italic; color: var(--accent); }
-/* Email card: a tiny solved mirror-cube face that scrambles on hover.
-   It stays hidden until the solved cube launches it (see ui.js). */
+/* Email card. It stays hidden until the solved cube sends out a gold piece,
+   which lands as the tile on its left; the card unfolds from that tile (see main.js). */
 .mail-card.is-waiting { visibility: hidden; }
-.sticker-shot {
-  position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none;
-  width: 28px; height: 28px; border-radius: 6px;
-  background: linear-gradient(135deg, #F6DFA6 0%, #D9A441 45%, #8B6A2E 100%);
-  box-shadow: 0 0 0 3px #1E1814, 0 8px 24px -6px rgba(217, 164, 65, .6);
-}
 .mail-card {
   display: inline-flex; align-items: stretch; align-self: flex-start;
   margin-top: 2.5rem;
@@ -429,18 +423,17 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 .mail-addr { font: 400 .95rem var(--mono); color: var(--ink); transition: color .2s; }
 .mail-link:hover .mail-addr { color: var(--accent); }
 
-.mini-cube {
-  /* A solved mirror-cube face: uneven rows and columns, all gold */
-  display: grid; grid-template-columns: 6px 9px 12px; grid-template-rows: 11px 9px 7px; gap: 2px;
-  padding: 3px; background: #1E1814; border-radius: 5px; flex: none;
-  transition: grid-template-columns .45s cubic-bezier(.3,1.4,.5,1), grid-template-rows .45s cubic-bezier(.3,1.4,.5,1) .08s;
+/* The piece that delivered the card: same tile as on the other cards, a little bigger */
+.mail-tile {
+  flex: none; width: 28px; height: 28px; padding: 3.5px; border-radius: 7px;
+  background: #1E1814; box-shadow: 0 6px 16px -6px var(--metal-glow);
+  transition: transform .45s cubic-bezier(.3, 1.6, .5, 1);
 }
-.mini-cube i {
-  border-radius: 2px;
-  background: linear-gradient(135deg, #F6DFA6 0%, #D9A441 45%, #8B6A2E 100%);
+.mail-tile::before {
+  content: ""; display: block; width: 100%; height: 100%; border-radius: 4px;
+  background: var(--metal); box-shadow: 0 0 0 1px var(--metal-edge);
 }
-/* Hover: the layers shuffle, like a scrambled mirror cube */
-.mail-card:hover .mini-cube { grid-template-columns: 12px 6px 9px; grid-template-rows: 7px 11px 9px; }
+.mail-card:hover .mail-tile { transform: rotate(-8deg) scale(1.08); }
 
 .copy-btn {
   font: 500 .68rem var(--mono); letter-spacing: .12em; text-transform: uppercase;

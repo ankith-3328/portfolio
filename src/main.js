@@ -562,14 +562,6 @@ function init() {
     return { centre, d: d.normalize() };
   }
 
-  // The gap under the open lid, in page (screen) coordinates
-  const launchPoint = () => {
-    const { centre, d } = viewerDirection();
-    const p = centre.add(new THREE.Vector3(0, 1.05, 0)).addScaledVector(d, 1.2).project(camera);
-    const r = canvas.getBoundingClientRect();
-    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
-  };
-
   // ---- Pieces that fly out of the cube and become cards ----
   // About tiles, experience cards, project cards and achievement tiles each own one piece of the cube. As a card
   // scrolls into view its piece pops out, arcs across the page and shrinks into a small tile in the
@@ -709,6 +701,99 @@ function init() {
     }
   }
 
+  // ---- The email card, delivered by a piece from the solved cube ----
+  // A copy of a corner piece (so the cube stays whole) rises out of the gap under the open lid,
+  // arcs to the card's tile, shrinks into it, and the card unfolds from the tile.
+  const mailCard = document.querySelector('.mail-card');
+  const mailTile = mailCard?.querySelector('.mail-tile');
+  const mailSource = cube.cubies.find((c) => c.home.equals(new THREE.Vector3(1, 1, 1)));
+  // (userData points back at the cube, which clone() can't copy: leave it off the copy)
+  const { userData } = mailSource.group;
+  mailSource.group.userData = {};
+  const mailPiece = mailSource.group.clone();
+  mailSource.group.userData = userData;
+  mailPiece.visible = false;
+  scene.add(mailPiece);
+  const MAIL_FLIGHT = 1.05; // seconds
+  let mailFlight = null;
+
+  function launchMail() {
+    if (!mailCard?.classList.contains('is-waiting')) return;
+    if (!wide.matches || reducedMotion) {
+      window.dispatchEvent(new CustomEvent('cube:solved')); // the page just fades the card in
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('mail:incoming'));
+    const r = () => Math.random() - 0.5;
+    mailFlight = { t: 0, spinAxis: new THREE.Vector3(r(), r(), r()).normalize() };
+  }
+
+  function unfoldMail() {
+    mailCard.classList.remove('is-waiting');
+    const card = mailCard.getBoundingClientRect();
+    const tile = mailTile.getBoundingClientRect();
+    mailCard.style.transformOrigin =
+      `${tile.left + tile.width / 2 - card.left}px ${tile.top + tile.height / 2 - card.top}px`;
+    mailCard.animate([
+      { transform: 'scale(.1)', opacity: 0 },
+      { transform: 'scale(1.03)', opacity: 1, offset: 0.65 },
+      { transform: 'scale(1)', opacity: 1 },
+    ], { duration: 620, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    mailTile.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }],
+      { duration: 480, delay: 200, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+  }
+
+  const mailTmp = { start: new THREE.Vector3(), rise: new THREE.Vector3(), target: new THREE.Vector3(),
+    p: new THREE.Vector3(), q: new THREE.Quaternion(), land: new THREE.Quaternion(), spinQ: new THREE.Quaternion() };
+  function updateMail(dt) {
+    if (!mailFlight) return;
+    mailFlight.t += dt;
+    const k = clamp01(mailFlight.t / MAIL_FLIGHT);
+    if (k >= 1) {
+      mailPiece.visible = false;
+      mailFlight = null;
+      unfoldMail();
+      return;
+    }
+    const { start, rise, target, p, q, land, spinQ } = mailTmp;
+
+    // Out of the gap under the lid, on the side facing the viewer
+    const { centre, d } = viewerDirection();
+    start.copy(centre).add(new THREE.Vector3(0, 0.9, 0)).addScaledVector(d, 0.6);
+    rise.copy(start).add(new THREE.Vector3(0, 0.7, 0)).addScaledVector(d, 1.6); // toward the viewer
+
+    // The card's tile, as a point between the camera and the cube
+    const rect = mailTile.getBoundingClientRect();
+    ndc.set(((rect.left + rect.width / 2) / window.innerWidth) * 2 - 1,
+      -((rect.top + rect.height / 2) / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const depth = camera.position.length() * 0.72;
+    target.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, depth);
+    const pxPerUnit = window.innerHeight / (2 * depth * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+    const size = Math.max(mailSource.size.x, mailSource.size.y, mailSource.size.z);
+    const landScale = (rect.width * 1.1) / (size * pxPerUnit);
+
+    // 0 → 0.22: rise out of the cube, growing.  0.22 → 1: arc down to the tile, shrinking.
+    const pop = ease(clamp01(k / 0.22));
+    const fly = ease(clamp01((k - 0.22) / 0.78));
+    if (k < 0.22) {
+      p.lerpVectors(start, rise, pop);
+    } else {
+      const lift = new THREE.Vector3(0, 0.6, 0);
+      bezier(rise, rise.clone().add(lift), target.clone().add(lift), target, fly, p);
+    }
+    mailPiece.position.copy(p);
+    mailPiece.scale.setScalar(k < 0.22 ? 0.3 + 0.7 * pop : THREE.MathUtils.lerp(1, landScale, fly));
+
+    // From the cube's orientation to facing the camera, tumbling once on the way
+    spin.getWorldQuaternion(q).multiply(mailSource.quat);
+    land.copy(camera.quaternion).multiply(flyTmp.landTilt);
+    q.slerp(land, fly);
+    spinQ.setFromAxisAngle(mailFlight.spinAxis, Math.PI * 2 * fly);
+    mailPiece.quaternion.copy(q).multiply(spinQ);
+    mailPiece.visible = true;
+  }
+
   // ---- Callouts and the live size readout ----
   const callouts = makeCallouts(stage);
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -844,9 +929,8 @@ function init() {
       // Open the lid on the side facing the viewer
       const toCube = cube.object.matrixWorld.clone().invert();
       cube.celebrate(viewerDirection().d.transformDirection(toCube));
-      // Once the lid is open, tell the page where the gap is so it can launch the email sticker
-      setTimeout(() => window.dispatchEvent(new CustomEvent('cube:solved', { detail: launchPoint() })),
-        reducedMotion ? 0 : LAUNCH_AT * 1000);
+      // Once the lid is open, a gold piece comes out of the gap and delivers the email card
+      setTimeout(launchMail, reducedMotion ? 0 : LAUNCH_AT * 1000);
     }
     if (!cube.freePlay) wasSolved = solved;
 
@@ -858,6 +942,7 @@ function init() {
     cube.explode = explode;
     cube.draw();
     updateFlights();
+    updateMail(dt);
 
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);
