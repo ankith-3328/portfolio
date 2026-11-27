@@ -4,8 +4,8 @@
 // The scroll position decides how many solution moves are done:
 // progress 7.4 = "7 moves done, the 8th is 40% through". Scrolling up undoes moves.
 //
-// Plus two bits of theatre: the cube is drafted as a blueprint on load (wire outlines, then a scanner
-// turns them into metal, then it scrambles itself), and it does a victory flourish when solved.
+// Plus two bits of theatre: the cube assembles itself on load (the core drops in, then pieces split
+// off one another, from the core outward), and it does a victory flourish when solved.
 //
 // It is also playable: grab a face and twist a layer yourself (free play). While you are playing,
 // the scroll solve waits; main.js undoes your moves when you scroll again.
@@ -16,8 +16,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 // Mirror plates on a dark body: warm gold in the dark theme, polished silver in the light one.
 // Each plate sits on a slightly larger, satin "brushed" rim that catches light along its edges.
 const FINISHES = {
-  gold: { plate: new THREE.Color(0xE8BE78), rim: new THREE.Color(0xB0803C), wire: new THREE.Color(0xE89A72) },
-  silver: { plate: new THREE.Color(0xEEF0F4), rim: new THREE.Color(0x9EA3AC), wire: new THREE.Color(0xC96442) },
+  gold: { plate: new THREE.Color(0xE8BE78), rim: new THREE.Color(0xB0803C) },
+  silver: { plate: new THREE.Color(0xEEF0F4), rim: new THREE.Color(0x9EA3AC) },
 };
 const BODY_COLOR = 0x1E1814;
 
@@ -102,20 +102,19 @@ function lidOpen(t) {
   return 0;
 }
 
-// Intro, in seconds from page load:
-// 1. Blueprint: each piece's outline is drawn in thin lines, top layer first
-// 2. Scan: a plane of light sweeps down; above it the lines have become polished metal
-// 3. Speed scramble: the solved cube scrambles itself, one fast quarter turn after another
-const IN_WIRE = 0.1;            // first outline starts drawing
-const IN_WIRE_LEN = 0.7;        // how long one piece's outline takes
-const IN_WIRE_STAGGER = 0.5;    // spread of start times, top to bottom
-const IN_SCAN = 1.05;           // scanner starts at the top
-const IN_SCAN_LEN = 1.0;        // and reaches the bottom this much later
-const IN_SCRAMBLE = 2.15;       // first scramble move
-const IN_MOVE = 0.072;          // per scramble move
-const IN_SETTLE = 0.3;          // the cube squashes a little as the last move lands
-const SCAN_TOP = 2.9;           // world heights the scanner travels between
-const SCAN_BOTTOM = -2.9;
+// Intro: self-assembly, in seconds from page load.
+// The bare core (hub and axles) drops in and bounces. Then the pieces grow outward in generations,
+// like cells splitting: centres slide out of the core, each edge splits off a centre, and each
+// corner splits off an edge. Every piece twists a quarter turn as it emerges and snaps into place.
+const IN_DROP_START = 0.1;          // core starts falling
+const IN_DROP = 0.42;               // and lands this much later
+const IN_GEN = [0, 0.72, 1.06, 1.4]; // when each generation starts: [core, centres, edges, corners]
+const IN_GROW = 0.34;               // one piece's trip out of its parent
+const IN_STAGGER = 0.08;            // pieces of one generation start at slightly different moments
+const IN_SETTLE = 0.3;              // the last squash
+
+// A quick, damped squash: 0 → up → 0 over `length` seconds after it starts
+const pulse = (x, length) => (x > 0 && x < length ? Math.sin(Math.PI * x / length) * (1 - x / length) : 0);
 
 // Victory flourish: a glint of light sweeps across the now-perfect box, then the top layer
 // hinges open like a lid, the email pops out, and the lid closes.
@@ -144,16 +143,14 @@ export class MirrorCube {
 
     this.scramble = randomMoves(scrambleLength);
     this.solution = this.scramble.slice().reverse().map(invert);
-    // With the intro, the cube starts solved and scrambles itself on screen
-    this.scrambled = 0;
-    if (!intro) while (this.scrambled < this.scramble.length) this.#apply(this.scramble[this.scrambled++], 1);
+    for (const m of this.scramble) this.#apply(m, 1);
 
     this.applied = 0;      // solution moves fully done
     this.progress = 0;
 
     this.introTime = intro ? 0 : Infinity;
-    this.introLength = IN_SCRAMBLE + this.scramble.length * IN_MOVE + IN_SETTLE;
-    if (intro) this.#buildBlueprint();
+    this.introLength = IN_GEN[3] + IN_STAGGER + IN_GROW + IN_SETTLE;
+    if (intro) this.#planAssembly();
     this.celebration = Infinity; // seconds since the last "solved" flourish
     this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
@@ -264,79 +261,43 @@ export class MirrorCube {
     }
   }
 
-  // Thin outlines around every piece (the blueprint), and clipping planes for the scan:
-  // metal shows above the scanner, outlines below it
-  #buildBlueprint() {
-    this.metalClip = new THREE.Plane(new THREE.Vector3(0, 1, 0), -SCAN_TOP);
-    this.wireClip = new THREE.Plane(new THREE.Vector3(0, -1, 0), SCAN_TOP);
-    this.solidMats = [this.bodyMat, this.mirrorMat, this.rimMat, this.mechMat];
-    for (const m of this.solidMats) m.clippingPlanes = [this.metalClip];
-
+  // Each piece's parent (the neighbour one step closer to the core, which it splits off from),
+  // its generation, and the twist it makes on the way out
+  #planAssembly() {
     for (const c of this.cubies) {
-      const mat = new THREE.LineDashedMaterial({
-        color: this.finish.wire, transparent: true, opacity: 0.95, depthWrite: false,
-        dashSize: 0, gapSize: 10, clippingPlanes: [this.wireClip],
-      });
-      const box = new THREE.BoxGeometry(c.size.x, c.size.y, c.size.z);
-      const wire = new THREE.LineSegments(new THREE.EdgesGeometry(box), mat);
-      box.dispose();
-      wire.computeLineDistances(); // each edge draws from one end to the other
-      wire.position.copy(c.centre);
-      c.group.add(wire);
-      c.wire = wire;
-      // Top layer first, with a little randomness so it reads as hand-drafted
-      c.wireDelay = IN_WIRE + ((1 - c.home.y) / 2 * 0.65 + Math.random() * 0.35) * IN_WIRE_STAGGER;
+      const p = c.pos; // where it sits in the (already scrambled) cube
+      c.gen = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z); // 1 centre, 2 edge, 3 corner
+      const axes = ['x', 'y', 'z'].filter((a) => p[a] !== 0);
+      c.splitAxis = axes[Math.floor(Math.random() * axes.length)];
+      c.parentPos = p.clone();
+      c.parentPos[c.splitAxis] = 0;
+      c.splitTwist = (Math.random() < 0.5 ? -1 : 1) * Math.PI / 2;
+      c.growAt = IN_GEN[c.gen] + Math.random() * IN_STAGGER;
     }
   }
 
-  // Where the scanner is (world height), or null when it is not running
-  get scanY() {
-    const k = (this.introTime - IN_SCAN) / IN_SCAN_LEN;
-    return k < 0 || k > 1 || this.calm ? null : SCAN_TOP + (SCAN_BOTTOM - SCAN_TOP) * smooth(k);
-  }
+  // The core's fall and bounce, and the whole cube's squash as each generation lands
+  #introWhole(t) {
+    const land = IN_DROP_START + IN_DROP;
+    const d = clamp01((t - IN_DROP_START) / IN_DROP);
+    this.hub.scale.setScalar(t < IN_DROP_START ? 0 : 0.7 + 0.3 * d);
+    this.hub.position.y = d < 1 ? 3.4 * (1 - d * d) : 0.22 * pulse(t - land, 0.32);
 
-  // Seconds into the speed scramble, or -1 before it starts / after the intro
-  get #scrambleClock() {
-    return this.introDone ? -1 : this.introTime - IN_SCRAMBLE;
-  }
-
-  // One step of the intro: outlines, scanner, scramble moves, and the squash at the end
-  #introStep(t) {
-    // Outlines draw edge by edge, then fade once the metal has replaced them
-    const scanK = clamp01((t - IN_SCAN) / IN_SCAN_LEN);
-    for (const c of this.cubies) {
-      const k = easeOutCubic(clamp01((t - c.wireDelay) / IN_WIRE_LEN));
-      c.wire.material.dashSize = k * 1.6;
-      c.wire.material.opacity = 0.95 * (1 - scanK * scanK);
-    }
-    const y = SCAN_TOP + (SCAN_BOTTOM - SCAN_TOP) * smooth(scanK);
-    this.metalClip.constant = -y;
-    this.wireClip.constant = y;
-
-    // Speed scramble: apply each move as it finishes
-    const st = t - IN_SCRAMBLE;
-    const done = Math.min(this.scramble.length, Math.max(0, Math.floor(st / IN_MOVE)));
-    while (this.scrambled < done) this.#apply(this.scramble[this.scrambled++], 1);
-
-    // Squash as the last move lands
-    const k = (st - this.scramble.length * IN_MOVE) / IN_SETTLE;
-    const squash = k > 0 && k < 1 ? 0.05 * Math.sin(Math.PI * k) * (1 - k) : 0;
+    let squash = 0.07 * pulse(t - land, 0.28);
+    for (let g = 1; g <= 3; g++) squash += 0.035 * pulse(t - (IN_GEN[g] + IN_GROW * 0.6), 0.26);
     this.object.scale.set(1 + squash, 1 - squash, 1 + squash);
   }
 
-  // Intro over: drop the outlines and clipping, and make sure the scramble is complete
-  #endIntro() {
-    this.introCleaned = true;
-    while (this.scrambled < this.scramble.length) this.#apply(this.scramble[this.scrambled++], 1);
-    this.object.scale.setScalar(1);
-    if (!this.solidMats) return;
-    for (const m of this.solidMats) { m.clippingPlanes = null; m.needsUpdate = true; }
-    for (const c of this.cubies) {
-      c.group.remove(c.wire);
-      c.wire.geometry.dispose();
-      c.wire.material.dispose();
-      c.wire = null;
-    }
+  // One piece: hidden inside its parent, then pushed out with a twist, overshooting into its slot
+  #introPiece(c, t) {
+    const k = (t - c.growAt) / IN_GROW;
+    if (k <= 0) return c.group.scale.setScalar(0);
+    if (k >= 1) return c.group.scale.setScalar(1);
+    const slot = c.group.position.clone();
+    c.group.position.lerpVectors(c.parentPos, slot, easeOutBack(k));
+    c.group.scale.setScalar(0.35 + 0.65 * easeOutCubic(k));
+    c.group.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(AXES[c.splitAxis], c.splitTwist * (1 - easeOutCubic(k))));
   }
 
   get introDone() { return this.introTime >= this.introLength; }
@@ -413,7 +374,7 @@ export class MirrorCube {
   }
 
   setProgress(p) {
-    // The scroll solve waits while the visitor plays, and until the intro has scrambled the cube
+    // The scroll solve waits while the visitor plays, and until the cube has assembled
     if (this.freePlay || !this.introDone) return this.draw();
     p = Math.min(Math.max(p, 0), this.total);
     this.progress = p;
@@ -427,12 +388,6 @@ export class MirrorCube {
 
   // The layer that is turning right now, if any: { axis, layer, angle }
   get #turning() {
-    const st = this.#scrambleClock;
-    if (st >= 0 && this.scrambled < this.scramble.length) {
-      const m = this.scramble[this.scrambled];
-      const frac = st / IN_MOVE - this.scrambled;
-      return { axis: m.axis, layer: m.layer, angle: angleOf(m) * smooth(clamp01(frac / 0.85)) };
-    }
     if (this.twist) return this.twist;
     const a = this.anims[0];
     if (a) {
@@ -461,7 +416,6 @@ export class MirrorCube {
       this.mirrorMat.color.copy(this.finish.plate);
       this.rimMat.color.copy(this.finish.rim);
     }
-    for (const c of this.cubies) c.wire?.material.color.copy(this.finish.wire);
   }
 
   // How far through the solve glint we are (0..1), or null when there is none
@@ -491,8 +445,14 @@ export class MirrorCube {
 
   // Draw every piece: its settled place, plus the layer that's mid-turn
   draw() {
-    if (!this.introDone) this.#introStep(this.introTime);
-    else if (!this.introCleaned) this.#endIntro();
+    const intro = !this.introDone;
+    if (intro) this.#introWhole(this.introTime);
+    else if (!this.introCleaned) {
+      this.introCleaned = true;
+      this.object.scale.setScalar(1);
+      this.hub.position.set(0, 0, 0);
+      this.hub.scale.setScalar(1);
+    }
     const moving = this.#turning;
     const partial = moving
       ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], moving.angle)
@@ -539,7 +499,8 @@ export class MirrorCube {
 
       // Exploded view: every piece slides straight out from the core
       if (this.explode > 0) c.group.position.multiplyScalar(1 + 0.42 * this.explode);
-      c.group.scale.setScalar(1);
+      if (intro) this.#introPiece(c, this.introTime);
+      else c.group.scale.setScalar(1);
     }
   }
 }

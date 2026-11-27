@@ -96,21 +96,6 @@ function shadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-// A soft disc of light: the scanner plane in the intro
-function glowTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(255,255,255,.35)');
-  grad.addColorStop(0.62, 'rgba(255,255,255,.9)');
-  grad.addColorStop(0.72, 'rgba(255,255,255,.5)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(c);
-}
-
 const ease = (t) => t * t * (3 - 2 * t);
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const easeOutBack = (t) => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2);
@@ -165,7 +150,6 @@ function init() {
   // ---- Renderer, scene, camera, lights ----
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.localClippingEnabled = true; // the intro's scanner turns outlines into metal with clipping planes
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -217,15 +201,6 @@ function init() {
   shadow.position.y = -2.7;
   scene.add(shadow);
   let shadowFade = 0;
-
-  // The intro's scanner: a disc of light that slides down through the cube
-  const scanGlow = new THREE.Mesh(
-    new THREE.PlaneGeometry(6.5, 6.5),
-    new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0, depthWrite: false }),
-  );
-  scanGlow.rotation.x = -Math.PI / 2;
-  scanGlow.visible = false;
-  scene.add(scanGlow);
 
   // ---- Keep the canvas sharp at any size ----
   // On wide screens the cube lives in the right 54% of the window; on narrow ones it is centred.
@@ -496,34 +471,24 @@ function init() {
   };
   const pad = (n) => String(n).padStart(2, '0');
   hud.total.textContent = pad(cube.total);
-  // During the intro the list shows the scramble being played; afterwards, the solution
-  let moveItems = [];
-  let listMode = '';
-  function fillMoves(mode) {
-    listMode = mode;
-    hud.moves.replaceChildren();
-    moveItems = (mode === 'scramble' ? cube.scramble : cube.solution).map((m) => {
-      const li = document.createElement('li');
-      li.textContent = notation(m);
-      hud.moves.appendChild(li);
-      return li;
-    });
-  }
+  const moveItems = cube.solution.map((m) => {
+    const li = document.createElement('li');
+    li.textContent = notation(m);
+    hud.moves.appendChild(li);
+    return li;
+  });
   const defaultHint = hud.hint.textContent;
   let hudKey = '';
   function updateHud() {
     const intro = !cube.introDone;
-    const mode = intro ? 'scramble' : 'solve';
-    if (mode !== listMode) fillMoves(mode);
     const free = cube.freePlay;
-    const done = intro ? cube.scrambled : cube.applied;
-    const turning = intro ? cube.introTime > 2.15 && done < cube.total
-      : !free && cube.progress > done && done < cube.total;
-    const key = [mode, done, turning, free, cube.userMoves.length, stageName, undoing].join('|');
+    const done = cube.applied;
+    const turning = !free && cube.progress > done && done < cube.total;
+    const key = [intro, done, turning, free, cube.userMoves.length, stageName, undoing].join('|');
     if (key === hudKey) return;
     hudKey = key;
 
-    hud.stage.textContent = intro ? 'Scrambling' : stageName;
+    hud.stage.textContent = intro ? 'Assembling' : stageName;
     hud.move.textContent = pad(done);
     moveItems.forEach((li, i) => {
       li.classList.toggle('is-done', i < done);
@@ -726,16 +691,6 @@ function init() {
     cube.draw();
     updateFlights();
 
-    // The scanner disc follows the scan line during the intro
-    const scanY = cube.scanY;
-    scanGlow.visible = scanY !== null;
-    if (scanGlow.visible) {
-      scanGlow.position.y = scanY;
-      const k = 1 - Math.abs(scanY) / 2.9;
-      scanGlow.material.opacity = (root.dataset.theme === 'light' ? 0.35 : 0.22) * Math.min(1, k * 3);
-      scanGlow.material.color.set(root.dataset.theme === 'light' ? 0xC96442 : 0xF2A27E);
-    }
-
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);
     pointer.sx += (pointer.x - pointer.sx) * follow;
@@ -763,7 +718,7 @@ function init() {
     satellites.mesh.visible = satScale > 0.01;
 
     // Shadow fades in with the cube, a touch lighter on the light theme
-    shadowFade += ((cube.introTime > 1.5 ? 1 : 0) - shadowFade) * (1 - Math.exp(-dt * 3));
+    shadowFade += ((cube.introTime > 0.5 ? 1 : 0) - shadowFade) * (1 - Math.exp(-dt * 3));
     shadow.material.opacity = shadowFade * (root.dataset.theme === 'light' ? 0.22 : 0.5) * (1 - explode * 0.4);
 
     if (!gesture || gesture.mode !== 'spin') {
