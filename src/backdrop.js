@@ -1,6 +1,7 @@
 // The blueprint backdrop: a full-screen layer drawn behind the cube, in one fragment shader.
-//   - a fine engineering grid with heavier major lines, drifting a little with scroll
-//   - the grid bends inward around the cube, like a lens
+//   - a mirror-cube grid: each block is cut into three uneven strips both ways (the cube's own
+//     layer proportions), neighbouring blocks are mirrored, and block corners carry a small dot;
+//     it drifts a little with scroll
 //   - a warm spotlight follows the cursor and lights the grid up where it shines
 //   - a soft pool of light under the cube, and a touch of film grain everywhere
 
@@ -28,10 +29,21 @@ const fragmentShader = /* glsl */ `
   uniform float uStrength;  // overall opacity of the grid (lighter on the light theme)
   varying vec2 vUv;
 
-  // 1 on a grid line of the given cell size and width (px), 0 elsewhere, anti-aliased
-  float gridLine(vec2 p, float cell, float width) {
-    vec2 g = abs(fract(p / cell - 0.5) - 0.5) * cell;
-    float d = min(g.x, g.y);
+  const float BLOCK = 132.0; // one 'face' of the grid, px
+
+  // Along one axis: distance (px) to the nearest cut inside a block and to the block's own edge.
+  // The two inner cuts split the block unevenly (like a mirror cube's layers), and every other
+  // block is mirrored so the pattern doesn't read as a plain repeat.
+  vec2 cuts(float x, float a, float b) {
+    float i = floor(x / BLOCK);
+    float u = x - i * BLOCK;
+    if (mod(i, 2.0) > 0.5) u = BLOCK - u;
+    float edge = min(u, BLOCK - u);
+    float inner = min(abs(u - a * BLOCK), abs(u - b * BLOCK));
+    return vec2(inner, edge);
+  }
+
+  float line(float d, float width) {
     return 1.0 - smoothstep(width - 0.5, width + 0.6, d);
   }
 
@@ -42,21 +54,22 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec2 p = vec2(vUv.x * uRes.x, (1.0 - vUv.y) * uRes.y);
 
-    // Lens: pull the grid toward the cube
-    vec2 d = p - uCube;
-    float r = max(length(d), 1e-3);
-    float lens = exp(-pow(r / (uCubeR * 1.7), 2.0));
-    vec2 q = p - d / r * lens * uCubeR * 0.22;
-    q.y += uScroll * 0.3;
+    vec2 q = p + vec2(0.0, uScroll * 0.3);
 
-    float lines = gridLine(q, 24.0, 0.5) * 0.35 + gridLine(q, 120.0, 0.6) * 0.85;
+    // Columns cut at 0.62 / 1.62 of 3 (x layers 0.62 : 1 : 1.38); rows at 0.74 / 1.74 of 3
+    vec2 cx = cuts(q.x, 0.62 / 3.0, 1.62 / 3.0);
+    vec2 cy = cuts(q.y, 0.74 / 3.0, 1.74 / 3.0);
+    float inner = max(line(cx.x, 0.5), line(cy.x, 0.5));
+    float edge = max(line(cx.y, 0.6), line(cy.y, 0.6));
+    float corner = 1.0 - smoothstep(1.2, 2.2, length(vec2(cx.y, cy.y)));
+    float lines = max(max(inner * 0.4, edge * 0.85), corner * 2.2);
 
     // Cursor spotlight, and the pool of light under the cube
     float spot = exp(-pow(length(p - uMouse) / 280.0, 2.0)) * uMouseOn;
     vec2 under = (p - uCube - vec2(0.0, uCubeR * 0.6)) / vec2(1.4, 0.5);
     float pool = exp(-pow(length(under) / (uCubeR * 1.05), 2.0));
 
-    float gridA = lines * (0.055 + 0.2 * spot + 0.05 * pool) * (1.0 - 0.75 * lens) * uStrength;
+    float gridA = lines * (0.055 + 0.2 * spot + 0.05 * pool) * uStrength;
     float glowA = spot * 0.05 + pool * 0.09;
     float grainA = max(hash(floor(p) + uGrainSeed) - 0.5, 0.0) * 0.05;
 
