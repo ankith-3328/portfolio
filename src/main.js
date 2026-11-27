@@ -281,16 +281,68 @@ function init() {
     const side = s.dataset.side;
     if (side === 'left') return { x: 0.75, y: 0.5, size: 0.88 };
     if (side === 'right') return { x: 0.25, y: 0.5, size: 0.88 };
-    return s.classList.contains('hero') ? { x: 0.5, y: 0.38, size: 0.96 } : { x: 0.5, y: 0.3, size: 0.74 };
+    return s.classList.contains('hero') ? heroRest : { x: 0.5, y: 0.3, size: 0.74 };
   };
   let sectionMids = [];
+  // Hero: the cube must sit in the gap between the header and the text, with clear space around it.
+  // A first guess comes from the gap's size; after the intro, fitHero() measures the cube's real
+  // outline on screen and nudges its size and height until it fits.
+  const heroRest = { x: 0.5, y: 0.38, size: 0.9 };
+  const heroText = sections[0].querySelector('.eyebrow');
+  const heroRoom = { top: 0, bottom: 0 };
   const measureMids = () => {
     sectionMids = sections.map((s) => s.getBoundingClientRect().top + window.scrollY + s.offsetHeight / 2);
+    const h = window.innerHeight;
+    heroRoom.top = 96;                                                    // below the header
+    heroRoom.bottom = heroText.offsetTop - sections[0].offsetTop - 40; // layout position: ignores the fade-in slide
+    const room = Math.max(heroRoom.bottom - heroRoom.top, h * 0.25);
+    heroRest.size = Math.min(1, room / (0.66 * h));
+    heroRest.y = (heroRoom.top + room / 2) / h;
   };
   window.addEventListener('resize', measureMids);
   new ResizeObserver(measureMids).observe(document.body);
   measureMids();
 
+  // The cube's outline on screen (px): the corners of every piece, projected
+  const boxCorner = new THREE.Vector3();
+  function cubeScreenBox() {
+    let top = Infinity, bottom = -Infinity;
+    for (const c of cube.cubies) {
+      if (!c.group.visible) continue;
+      for (let i = 0; i < 8; i++) {
+        boxCorner.set(
+          c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
+          c.centre.y + (i & 2 ? 0.5 : -0.5) * c.size.y,
+          c.centre.z + (i & 4 ? 0.5 : -0.5) * c.size.z,
+        );
+        c.group.localToWorld(boxCorner).project(camera);
+        const y = (1 - boxCorner.y) / 2 * view.height;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+    return { top, bottom };
+  }
+
+  // While resting in the hero, keep the real outline inside the gap above the text
+  function fitHero(dt) {
+    if (!wide.matches || !cube.introDone || anchorSection !== 0 || anchorK > 0) return;
+    cube.object.updateWorldMatrix(true, true);
+    const box = cubeScreenBox();
+    const height = box.bottom - box.top;
+    if (!(height > 0)) return;
+    const room = heroRoom.bottom - heroRoom.top;
+    const rate = 1 - Math.exp(-dt * 5);
+    // Shrink quickly if it is too big, grow back slowly (it changes shape as it turns)
+    const want = THREE.MathUtils.clamp(room / height, 0.85, 1.15);
+    const grow = want < 1 ? rate : rate * 0.3;
+    heroRest.size = Math.min(1.05, heroRest.size * (1 + (want - 1) * grow));
+    const off = (heroRoom.top + room / 2) - (box.top + box.bottom) / 2;
+    heroRest.y += (off / view.height) * rate;
+  }
+
+  let anchorSection = 0;
+  let anchorK = 0;
   function updateAnchor() {
     const mid = window.scrollY + window.innerHeight / 2;
     let i = 0;
@@ -299,6 +351,8 @@ function init() {
     const t = span > 0 ? clamp01((mid - sectionMids[i]) / span) : 0;
     // Rest for a while at each section, then glide: most of the move happens mid-way between them
     const k = reducedMotion ? (t < 0.5 ? 0 : 1) : ease(clamp01((t - 0.22) / 0.56));
+    anchorSection = i;
+    anchorK = k;
     const a = restFor(sections[i]);
     const b = restFor(sections[i + 1] || sections[i]);
     anchor.x = a.x + (b.x - a.x) * k;
@@ -718,6 +772,7 @@ function init() {
     // Glide the cube toward this scroll position's place on screen, turning as it travels
     updateAnchor();
     placeCamera();
+    fitHero(dt);
     travel.rotation.y = anchor.turn;
 
     // Free play holds the scroll solve. Scroll noticeably away and the visitor's moves rewind.

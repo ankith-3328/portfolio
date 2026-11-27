@@ -235,10 +235,11 @@ section[data-side="center"] {
   justify-content: flex-end; padding-bottom: 9vh;
 }
 .contact .lede, .contact .mail-card { text-shadow: 0 1px 18px var(--bg); }
+.hero { padding-bottom: 6vh; }
 section[data-side="center"] .eyebrow::after { content: ""; width: 1.75rem; height: 1px; background: currentColor; }
 section[data-side="center"] .lede { margin-inline: auto; }
 .hero h1 {
-  font-size: clamp(3.75rem, 10vw, 9rem); margin-bottom: 1.25rem;
+  font-size: clamp(3.5rem, 8.5vw, 7.75rem); margin-bottom: 1.1rem;
   /* A soft halo of page colour keeps the name readable where it crosses the cube */
   text-shadow: 0 2px 40px var(--bg), 0 0 18px color-mix(in srgb, var(--bg) 70%, transparent);
 }
