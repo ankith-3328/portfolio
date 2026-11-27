@@ -1,5 +1,5 @@
-// A light CAD touch around the cube: a width measurement, an X/Y/Z axis triad that turns with
-// the cube (like the orientation widget in CAD apps), and a short hint line beside the top
+// A light CAD touch around the cube: a width measurement, an X/Y/Z axis triad at its bottom-left
+// that turns with the cube (like the orientation widget in CAD apps), and a short hint line beside the top
 // corner when there is something worth saying. The line is an SVG over the canvas, the text
 // is plain HTML, and both follow the cube's outline on screen every frame.
 //
@@ -99,12 +99,12 @@ export function makeCallouts(container, { onWireframe } = {}) {
       tag.classList.toggle('is-left', s < 0);
       tag.style.transform = `translate(${Math.round(Math.min(Math.max(x, 16), W - tagW - 16))}px, ${Math.round(bt)}px)`;
 
-      // Axis triad at the lower outer corner, drawn as the camera sees the cube's own axes:
+      // Axis triad, always at the cube's bottom-left corner, drawn as the camera sees the cube's own axes:
       // longer when an axis lies across the screen, shorter when it points at you or away,
       // and fainter when it points away. Drawn back to front.
       if (axes) {
         const R = 38;
-        const cx = s > 0 ? br + 40 : bl - 40;
+        const cx = bl - 40;
         const cy = bottom - 8;
         hub.setAttribute('cx', cx);
         hub.setAttribute('cy', cy);
