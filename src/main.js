@@ -540,11 +540,11 @@ function init() {
   }
 
   // ---- Pieces that fly out of the cube and become cards ----
-  // Experience cards, project cards and achievement tiles each own one piece of the cube. As a card
+  // About tiles, experience cards, project cards and achievement tiles each own one piece of the cube. As a card
   // scrolls into view its piece pops out, arcs across the page and shrinks into a small tile in the
   // card's corner; the card unfolds from that tile. When the card nears the top of the screen the
   // piece lifts off again and flies home (the card stays open), so the cube is whole for the finale.
-  const flyItems = [...document.querySelectorAll('#experience .exp-card, #projects .card, #skills .achievements .tile')];
+  const flyItems = [...document.querySelectorAll('#about .facts .tile, #experience .exp-card, #projects .card, #skills .achievements .tile')];
   // Corners first, then edges: every card gets a different piece
   const pieces = cube.cubies
     .filter((c) => !c.center)
