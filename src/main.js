@@ -4,6 +4,10 @@
 //   drag around  → spin the whole cube
 //   double-click → pull the cube apart / put it back together
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
+//   projects     → a piece flies out of the cube for each project card and the card unfolds from it
+//
+// The canvas covers the whole window (so pieces can fly over the text), but the camera is
+// shifted so the cube itself sits in the right-hand part of the screen.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -92,6 +96,25 @@ function shadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// A soft disc of light: the scanner plane in the intro
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,.35)');
+  grad.addColorStop(0.62, 'rgba(255,255,255,.9)');
+  grad.addColorStop(0.72, 'rgba(255,255,255,.5)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+const ease = (t) => t * t * (3 - 2 * t);
+const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
+const easeOutBack = (t) => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2);
+
 // Tiny mirror cubelets orbiting the cube on tilted rings. They speed up while the page scrolls.
 function makeSatellites(material, count = 26) {
   const mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(1, 1, 1, 2, 0.16), material, count);
@@ -142,6 +165,7 @@ function init() {
   // ---- Renderer, scene, camera, lights ----
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.localClippingEnabled = true; // the intro's scanner turns outlines into metal with clipping planes
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -165,7 +189,6 @@ function init() {
   // ---- The cube ----
   const cube = new MirrorCube({ scrambleLength: 20, intro: !reducedMotion });
   root.classList.add('cube-ready'); // the email card waits for the cube
-  cube.camera = camera;            // lets the intro keep exploding pieces inside the canvas
   if (import.meta.env.DEV) window.__cube = cube; // for poking at it from the console while developing
 
   // tilt: leans toward the cursor.  spin: what the visitor drags around.
@@ -195,17 +218,34 @@ function init() {
   scene.add(shadow);
   let shadowFade = 0;
 
+  // The intro's scanner: a disc of light that slides down through the cube
+  const scanGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.5, 6.5),
+    new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0, depthWrite: false }),
+  );
+  scanGlow.rotation.x = -Math.PI / 2;
+  scanGlow.visible = false;
+  scene.add(scanGlow);
+
   // ---- Keep the canvas sharp at any size ----
+  // On wide screens the cube lives in the right 54% of the window; on narrow ones it is centred.
+  const wide = matchMedia('(min-width: 901px)');
   function resize() {
     const width = stage.clientWidth;
     const height = stage.clientHeight;
     if (!width || !height) return;
     renderer.setSize(width, height, false);
-    camera.aspect = width / height;
-    // Move the camera back on narrow screens so the whole cube fits
-    const fit = Math.max(1, 2.9 / (Math.tan(THREE.MathUtils.degToRad(16)) * baseCameraPos.length() * camera.aspect));
+    const area = wide.matches ? 0.54 : 1;
+    const centreX = width - (width * area) / 2;
+    // Render a wider, imaginary image centred on the cube, and show only its left part
+    const fullWidth = 2 * centreX;
+    camera.aspect = fullWidth / height;
+    // Move the camera back when the cube's area is narrow, so the whole cube fits
+    const areaAspect = (width * area) / height;
+    const fit = Math.max(1, 2.9 / (Math.tan(THREE.MathUtils.degToRad(16)) * baseCameraPos.length() * areaAspect));
     camera.position.copy(baseCameraPos).multiplyScalar(fit);
     camera.lookAt(0, 0, 0);
+    camera.setViewOffset(fullWidth, height, 0, 0, width, height);
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(stage);
@@ -332,7 +372,7 @@ function init() {
   canvas.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const hit = pick(e);
-    const canTwist = hit && cube.canTwist && cube.atRest && cube.explode < 0.15 && !undoing;
+    const canTwist = hit && cube.canTwist && cube.atRest && cube.explode < 0.15 && !undoing && !piecesAway();
     gesture = canTwist
       ? { mode: 'pending', ...hit, x0: e.clientX, y0: e.clientY, lastX: e.clientX, lastY: e.clientY }
       : { mode: 'spin', lastX: e.clientX, lastY: e.clientY };
@@ -456,23 +496,34 @@ function init() {
   };
   const pad = (n) => String(n).padStart(2, '0');
   hud.total.textContent = pad(cube.total);
-  const moveItems = cube.solution.map((m) => {
-    const li = document.createElement('li');
-    li.textContent = notation(m);
-    hud.moves.appendChild(li);
-    return li;
-  });
+  // During the intro the list shows the scramble being played; afterwards, the solution
+  let moveItems = [];
+  let listMode = '';
+  function fillMoves(mode) {
+    listMode = mode;
+    hud.moves.replaceChildren();
+    moveItems = (mode === 'scramble' ? cube.scramble : cube.solution).map((m) => {
+      const li = document.createElement('li');
+      li.textContent = notation(m);
+      hud.moves.appendChild(li);
+      return li;
+    });
+  }
   const defaultHint = hud.hint.textContent;
   let hudKey = '';
   function updateHud() {
+    const intro = !cube.introDone;
+    const mode = intro ? 'scramble' : 'solve';
+    if (mode !== listMode) fillMoves(mode);
     const free = cube.freePlay;
-    const done = cube.applied;
-    const turning = !free && cube.progress > done && done < cube.total;
-    const key = [done, turning, free, cube.userMoves.length, stageName, undoing].join('|');
+    const done = intro ? cube.scrambled : cube.applied;
+    const turning = intro ? cube.introTime > 2.15 && done < cube.total
+      : !free && cube.progress > done && done < cube.total;
+    const key = [mode, done, turning, free, cube.userMoves.length, stageName, undoing].join('|');
     if (key === hudKey) return;
     hudKey = key;
 
-    hud.stage.textContent = stageName;
+    hud.stage.textContent = intro ? 'Scrambling' : stageName;
     hud.move.textContent = pad(done);
     moveItems.forEach((li, i) => {
       li.classList.toggle('is-done', i < done);
@@ -486,6 +537,128 @@ function init() {
     hud.hint.textContent = !free && left > 0 && left <= 3 && cube.introDone
       ? `${left} move${left === 1 ? '' : 's'} from solved. Try finishing it by hand.`
       : defaultHint;
+  }
+
+  // ---- Pieces that fly out of the cube and become the project cards ----
+  // Each card owns one corner piece. As the card scrolls into view its piece pops out of the cube,
+  // arcs across the page and shrinks into a small tile in the card's corner; the card unfolds from
+  // that tile. Once the card has scrolled off the top, the piece flies home again.
+  const flyHomes = [new THREE.Vector3(1, 1, 1), new THREE.Vector3(-1, 1, 1), new THREE.Vector3(1, -1, 1)];
+  const flights = [...document.querySelectorAll('#projects .card')].map((card, i) => {
+    const badge = document.createElement('span');
+    badge.className = 'card-cubie';
+    badge.setAttribute('aria-hidden', 'true');
+    card.appendChild(badge);
+    card.classList.add('flies');
+    card.classList.remove('reveal'); // its entrance is the flight instead of the fade
+    const r = () => Math.random() - 0.5;
+    return {
+      card, badge,
+      cubie: cube.cubies.find((c) => c.home.equals(flyHomes[i % flyHomes.length])),
+      spinAxis: new THREE.Vector3(r(), r(), r()).normalize(),
+      f: 0, shown: -1,
+    };
+  });
+
+  // Page-space position of an element's top-left (ignores transforms, unlike getBoundingClientRect)
+  const pageOffset = (el) => {
+    let x = 0, y = 0;
+    for (let e = el; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; }
+    return { x, y };
+  };
+  const piecesAway = () => flights.some((fl) => fl.f > 0);
+
+  const flyTmp = {
+    slot: new THREE.Vector3(), out: new THREE.Vector3(), target: new THREE.Vector3(), p: new THREE.Vector3(),
+    coreQ: new THREE.Quaternion(), q: new THREE.Quaternion(), land: new THREE.Quaternion(), spinQ: new THREE.Quaternion(),
+    landTilt: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.45, 0.55, 0)),
+  };
+  const bezier = (a, b, c, d, t, out) => {
+    const u = 1 - t;
+    return out.set(0, 0, 0).addScaledVector(a, u * u * u).addScaledVector(b, 3 * u * u * t)
+      .addScaledVector(c, 3 * u * t * t).addScaledVector(d, t * t * t);
+  };
+
+  function updateFlights() {
+    const enabled = wide.matches && !reducedMotion && cube.introDone;
+    const vh = window.innerHeight;
+    const { slot, out, target, p, coreQ, q, land, spinQ, landTilt } = flyTmp;
+    cube.object.updateWorldMatrix(true, true);
+    cube.core.getWorldQuaternion(coreQ);
+    const coreQInv = coreQ.clone().invert();
+    const camDist = camera.position.length();
+
+    for (const fl of flights) {
+      const { card, badge, cubie } = fl;
+      const at = pageOffset(card);
+      const top = at.y - window.scrollY;
+      const bottom = top + card.offsetHeight;
+      // In: the card's top travels from just below the screen to 62% down it
+      const enter = clamp01((vh * 1.05 - top) / (vh * 0.43));
+      // Out: once the card has left through the top, the piece goes home
+      const leave = clamp01(-bottom / (vh * 0.4));
+      const f = enabled ? ease(enter) * (1 - leave) : 0;
+      fl.f = f;
+
+      // The card unfolds from the tile during the last part of the flight
+      const u = enabled ? clamp01((f - 0.86) / 0.14) : 1;
+      if (u !== fl.shown) {
+        fl.shown = u;
+        const ox = badge.offsetLeft + badge.offsetWidth / 2;
+        const oy = badge.offsetTop + badge.offsetHeight / 2;
+        if (u >= 1) {
+          card.style.opacity = card.style.transform = card.style.transformOrigin = '';
+        } else {
+          card.style.transformOrigin = `${ox}px ${oy}px`;
+          card.style.opacity = Math.min(1, u * 2.5);
+          card.style.transform = `scale(${0.06 + 0.94 * Math.max(0, easeOutBack(u))})`;
+        }
+        badge.classList.toggle('is-landed', !enabled || f > 0.95);
+      }
+
+      if (!cubie) continue;
+      if (f <= 0) { cubie.group.visible = true; continue; }
+      cubie.group.visible = f < 0.97;
+
+      // Where the piece sits in the cube right now (world), and a point just outside it
+      slot.copy(cubie.group.position);
+      out.copy(slot).multiplyScalar(1 + 1.3 / Math.max(slot.length(), 0.5));
+      cube.core.localToWorld(slot);
+      cube.core.localToWorld(out);
+
+      // Where the tile is on screen, as a point between the camera and the cube
+      const bx = at.x + badge.offsetLeft + badge.offsetWidth / 2;
+      const by = top + badge.offsetTop + badge.offsetHeight / 2;
+      ndc.set((bx / window.innerWidth) * 2 - 1, -(by / vh) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      const depth = camDist * 0.72;
+      target.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, depth);
+      const pxPerUnit = vh / (2 * depth * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+      const pieceSize = Math.max(cubie.size.x, cubie.size.y, cubie.size.z);
+      const landScale = (badge.offsetWidth * 1.1) / (pieceSize * pxPerUnit);
+
+      // 0 → 0.18: pop out of its slot.  0.18 → 0.9: arc to the tile.  0.9 → 1: settle and shrink in.
+      const pop = ease(clamp01(f / 0.18));
+      const fly = clamp01((f - 0.18) / 0.72);
+      if (fly === 0) {
+        p.lerpVectors(slot, out, pop);
+      } else {
+        const lift = new THREE.Vector3(0, 1.6, 0);
+        bezier(out, out.clone().add(lift), target.clone().add(lift), target, ease(fly), p);
+      }
+      const scale = THREE.MathUtils.lerp(1, landScale, ease(fly)) * (f > 0.9 ? 1 - 0.15 * Math.sin(Math.PI * clamp01((f - 0.9) / 0.1)) : 1);
+
+      // Turn from its place in the cube to face the camera, tumbling once on the way
+      q.copy(coreQ).multiply(cubie.group.quaternion);       // world orientation in the cube
+      land.copy(camera.quaternion).multiply(landTilt);       // world orientation on landing
+      q.slerp(land, ease(fly));
+      spinQ.setFromAxisAngle(fl.spinAxis, Math.PI * 2 * ease(fly));
+      q.multiply(spinQ);
+
+      cubie.group.position.copy(cube.core.worldToLocal(p.clone()));
+      cubie.group.quaternion.copy(coreQInv).multiply(q);
+      cubie.group.scale.setScalar(scale);
+    }
   }
 
   // ---- Animation loop ----
@@ -535,6 +708,17 @@ function init() {
     if (explode < 1e-3) explode = 0;
     cube.explode = explode;
     cube.draw();
+    updateFlights();
+
+    // The scanner disc follows the scan line during the intro
+    const scanY = cube.scanY;
+    scanGlow.visible = scanY !== null;
+    if (scanGlow.visible) {
+      scanGlow.position.y = scanY;
+      const k = 1 - Math.abs(scanY) / 2.9;
+      scanGlow.material.opacity = (root.dataset.theme === 'light' ? 0.35 : 0.22) * Math.min(1, k * 3);
+      scanGlow.material.color.set(root.dataset.theme === 'light' ? 0xC96442 : 0xF2A27E);
+    }
 
     // Pointer parallax, smoothed: the cube leans toward the cursor
     const follow = 1 - Math.exp(-dt * 3);
@@ -563,7 +747,7 @@ function init() {
     satellites.mesh.visible = satScale > 0.01;
 
     // Shadow fades in with the cube, a touch lighter on the light theme
-    shadowFade += ((cube.introTime > 1.2 ? 1 : 0) - shadowFade) * (1 - Math.exp(-dt * 3));
+    shadowFade += ((cube.introTime > 1.5 ? 1 : 0) - shadowFade) * (1 - Math.exp(-dt * 3));
     shadow.material.opacity = shadowFade * (root.dataset.theme === 'light' ? 0.22 : 0.5) * (1 - explode * 0.4);
 
     if (!gesture || gesture.mode !== 'spin') {
