@@ -113,6 +113,31 @@ ul, ol { padding: 0; list-style: none; }
 .nav a.is-active { color: var(--ink); }
 .nav a.is-active::after { transform: scaleX(1); }
 
+/* Wireframe switch, top left: a frosted pill like the nav, with a tiny toggle inside */
+.wire-toggle {
+  display: inline-flex; align-items: center; gap: .55rem; margin-right: auto;
+  height: 38px; padding: 0 .95rem 0 .6rem; cursor: pointer;
+  font: 500 .66rem var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 999px;
+  transition: color .2s, border-color .2s;
+}
+.wire-toggle[hidden] { display: none; }
+.wire-toggle i {
+  position: relative; width: 24px; height: 13px; border-radius: 999px;
+  background: var(--line); transition: background-color .25s;
+}
+.wire-toggle i::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ink-2); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1), background-color .25s;
+}
+.wire-toggle:hover { color: var(--ink-2); border-color: var(--hover-line); }
+.wire-toggle[aria-pressed="true"] { color: var(--accent); }
+.wire-toggle[aria-pressed="true"] i { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.wire-toggle[aria-pressed="true"] i::after { transform: translateX(11px); background: var(--accent); }
+.wire-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Light / dark switch */
 .theme-toggle {
   display: grid; place-items: center;
@@ -152,7 +177,7 @@ ul, ol { padding: 0; list-style: none; }
 }
 .stage canvas:active { cursor: grabbing; }
 
-/* ---------- CAD touch around the cube: a width measurement and a short hint ---------- */
+/* ---------- CAD touch around the cube: dimensions and a short hint ---------- */
 .callouts {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   transition: opacity .25s linear;
@@ -160,21 +185,8 @@ ul, ol { padding: 0; list-style: none; }
 .co-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .co-measure-line {
   fill: none; vector-effect: non-scaling-stroke;
-  stroke: color-mix(in srgb, var(--muted) 60%, transparent); stroke-width: 1;
-  stroke-dasharray: 1; stroke-dashoffset: 1;
-  transition: stroke-dashoffset .9s cubic-bezier(.6, .05, .25, 1) .15s;
+  stroke: color-mix(in srgb, var(--muted) 70%, transparent); stroke-width: 1;
 }
-.callouts.is-on .co-measure-line { stroke-dashoffset: 0; }
-/* XYZ axis triad, standard CAD colours (x red, y green, z blue), softened to suit the page */
-.co-triad { opacity: 0; transition: opacity .5s ease .2s; }
-.callouts.is-on .co-triad { opacity: 1; }
-.co-axis line { stroke-width: 1.75; stroke-linecap: round; }
-.co-axis text { font: 600 10px var(--mono); letter-spacing: 0; }
-.co-axis-x line { stroke: #E2675A; } .co-axis-x text { fill: #E2675A; }
-.co-axis-y line { stroke: #6FB878; } .co-axis-y text { fill: #6FB878; }
-.co-axis-z line { stroke: #5E95DA; } .co-axis-z text { fill: #5E95DA; }
-.co-hub { fill: var(--ink-2); }
-
 .co-tag, .co-size {
   position: absolute; left: 0; top: 0; white-space: nowrap;
   font-family: var(--mono); opacity: 0; transition: opacity .4s ease .35s;
@@ -184,29 +196,6 @@ ul, ol { padding: 0; list-style: none; }
 .co-tag em { font-size: .64rem; color: var(--accent); }
 .co-tag span { font-size: .6rem; color: var(--muted); }
 .co-tag em:empty, .co-tag span:empty { display: none; }
-/* The wireframe switch: a tiny pill toggle, the only clickable thing in the CAD layer */
-.co-switch {
-  display: inline-flex; align-items: center; gap: .45rem; margin-top: .45rem;
-  padding: .2rem .55rem .2rem .3rem; pointer-events: auto; cursor: pointer;
-  font: 500 .58rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
-  border: 1px solid var(--line); border-radius: 999px;
-  transition: color .2s, border-color .2s;
-}
-.co-switch i {
-  position: relative; width: 20px; height: 11px; border-radius: 999px;
-  background: var(--line); transition: background-color .25s;
-}
-.co-switch i::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--ink-2); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1);
-}
-.co-switch:hover { color: var(--ink-2); border-color: var(--hover-line); }
-.co-switch[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.co-switch[aria-pressed="true"] i { background: color-mix(in srgb, var(--accent) 35%, transparent); }
-.co-switch[aria-pressed="true"] i::after { transform: translateX(9px); background: var(--accent); }
-/* Right-aligned when the hint sits on the cube's left */
-.co-tag.is-left .co-switch { flex-direction: row-reverse; padding: .2rem .3rem .2rem .55rem; }
 .co-size {
   padding: 0 .4rem; font-size: .6rem; line-height: 16px; letter-spacing: .06em; color: var(--muted);
   background: var(--bg);
@@ -359,15 +348,14 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 .exp-points li + li { margin-top: .5rem; }
 .exp-points li::before {
   content: ""; position: absolute; left: 0; top: .62em;
-  width: 7px; height: 7px; border-radius: 2px;
-  /* A tiny mirror tile, gold or silver like the cube's plates */
-  background: var(--metal);
-  box-shadow: 0 0 0 1px var(--metal-edge), 0 1px 4px -1px var(--metal-glow);
+  width: 7px; height: 7px;
+  /* A tiny outlined square, like a point marker on a drawing */
+  border: 1px solid var(--accent);
 }
 .exp-stack { margin-top: 1.15rem; font: .74rem var(--mono); color: var(--brown); letter-spacing: .02em; }
 
 /* Staggered fade-up as the cards enter */
-.js .exp-card.reveal {
+.js .exp-card.reveal:not(.drafted) {
   transition: opacity .6s ease var(--d, 0ms), transform .6s cubic-bezier(.2, .7, .2, 1) var(--d, 0ms),
     border-color .3s, box-shadow .3s;
 }
@@ -403,35 +391,88 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 /* A project card's piece of the cube: the corner tile its piece shrinks into */
 .card-cubie {
   position: absolute; top: 1.5rem; right: 1.5rem;
-  width: 22px; height: 22px; padding: 3px; border-radius: 6px;
-  background: #1E1814;
-  box-shadow: 0 6px 14px -6px var(--metal-glow);
+  width: 22px; height: 22px;
   opacity: 0; transform: scale(.6);
   transition: opacity .2s ease, transform .45s cubic-bezier(.3, 1.6, .5, 1);
 }
-.card-cubie::before {
-  content: ""; display: block; width: 100%; height: 100%; border-radius: 3px;
-  background: var(--metal); box-shadow: 0 0 0 1px var(--metal-edge);
+/* Drawn as a tiny wireframe cube: front face solid, back face dashed, offset up and right */
+.card-cubie::before, .card-cubie::after {
+  content: ""; position: absolute; width: 72%; height: 72%; border-radius: 1px;
 }
+.card-cubie::before { left: 0; bottom: 0; border: 1px solid var(--ink-2); }
+.card-cubie::after { right: 0; top: 0; border: 1px dashed var(--muted); }
 .card-cubie.is-landed { opacity: 1; transform: none; }
 .card.flies h3 { padding-right: 2.5rem; }
 /* Experience cards keep their dates top-right, so their tile sits bottom-right */
 .exp-card .card-cubie { top: auto; bottom: 1.35rem; }
-.tile .card-cubie { top: 1.1rem; right: 1.1rem; width: 18px; height: 18px; padding: 2.5px; border-radius: 5px; }
 /* While unfolding, the scale is driven every frame: no easing on top of it */
 .flies.is-unfolding { transition: none !important; }
+
+/* Tiles and cards drawn like a CAD part: construction lines, a traced outline, then the content.
+   The SVG outline stands in for the CSS border, so it can be drawn in. */
+.js .drafted {
+  overflow: visible; border-color: transparent;
+  background-color: transparent;
+  transition: transform .3s ease, box-shadow .3s ease, background-color .25s ease calc(var(--draft-delay, 0ms) + .3s);
+}
+.js .drafted.is-drawn { background-color: var(--surface); }
+.drafted:hover { border-color: transparent; }
+.draft { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.draft path, .draft rect { fill: none; vector-effect: non-scaling-stroke; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.draft-guide {
+  stroke: var(--muted); stroke-width: 1; opacity: .45;
+  transition: stroke-dashoffset .18s cubic-bezier(.6, .05, .25, 1) var(--draft-delay, 0ms), opacity .4s ease calc(var(--draft-delay, 0ms) + .45s);
+}
+.draft-outline {
+  stroke: var(--ink-2); stroke-width: 1.25;
+  transition: stroke-dashoffset .3s cubic-bezier(.6, .05, .25, 1) calc(var(--draft-delay, 0ms) + .08s), stroke .3s ease calc(var(--draft-delay, 0ms) + .4s);
+}
+.is-drawn > .draft .draft-guide { stroke-dashoffset: 0; opacity: .18; }
+.is-drawn > .draft .draft-outline { stroke-dashoffset: 0; stroke: var(--line); }
+.drafted.is-drawn:hover .draft-outline { stroke: var(--hover-line); transition: stroke .3s ease; }
+/* Wiped instantly (off screen), so it can draw again next time */
+.js .drafted:not(.is-drawn), .js .drafted:not(.is-drawn) > :not(.card-cubie), .drafted:not(.is-drawn) .draft * {
+  transition: none !important;
+}
+/* Numbered balloon, as a part callout on a drawing */
+.draft-balloon { opacity: 0; transition: opacity .2s ease calc(var(--draft-delay, 0ms) + .32s); }
+.draft-balloon circle { fill: var(--bg); stroke: var(--accent); stroke-width: 1; }
+.draft-balloon text { font: 500 9px var(--mono); fill: var(--accent); }
+.is-drawn .draft-balloon { opacity: 1; }
+/* The content appears once the part is drawn (the cube piece's tile stays as it is) */
+.js .drafted > :not(.draft):not(.card-cubie) {
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .25s ease calc(var(--draft-delay, 0ms) + .35s), transform .25s ease calc(var(--draft-delay, 0ms) + .35s);
+}
+.js .drafted.is-drawn > :not(.draft):not(.card-cubie) { opacity: 1; transform: none; }
 
 /* Skills */
 .skill-groups { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem 2.5rem; }
 .skill-groups h3 {
+  display: flex; align-items: center; gap: .6rem;
   font-family: var(--mono); font-size: .72rem; font-weight: 500; letter-spacing: .12em;
   text-transform: uppercase; color: var(--muted); margin-bottom: .8rem;
 }
+/* A leader line running out from each group name, like a label on a drawing */
+.skill-groups h3::before { content: ""; width: 6px; height: 6px; border: 1px solid var(--accent); flex: none; }
+.skill-groups h3::after { content: ""; flex: 1; height: 0; border-top: 1px dashed var(--line); }
 .tags { display: flex; flex-wrap: wrap; gap: .45rem; }
+/* Each skill as a small drafted part: square corners with corner ticks */
 .tags li {
-  font-size: .85rem; padding: .25rem .7rem;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  position: relative;
+  font: .78rem var(--mono); letter-spacing: .02em; padding: .3rem .65rem;
+  color: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 2px;
+  background:
+    linear-gradient(var(--ink-2), var(--ink-2)) top left / 5px 1px,
+    linear-gradient(var(--ink-2), var(--ink-2)) top left / 1px 5px,
+    linear-gradient(var(--ink-2), var(--ink-2)) bottom right / 5px 1px,
+    linear-gradient(var(--ink-2), var(--ink-2)) bottom right / 1px 5px,
+    color-mix(in srgb, var(--surface) 60%, transparent);
+  background-repeat: no-repeat;
+  transition: border-color .2s, color .2s;
 }
+.tags li:hover { color: var(--ink); border-color: var(--hover-line); }
 .achievements { margin-top: 3.5rem; }
 .achievements dt { white-space: nowrap; }
 .achievements dd { line-height: 1.45; margin-top: .35rem; }
@@ -546,6 +587,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 @media (max-width: 640px) {
   .tile .card-cubie { display: none; }
   .nav { display: none; }
+  .wire-toggle { display: none; }
   .site-header { background: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 1rem 1.25rem; }
   .facts, .skill-groups { grid-template-columns: 1fr 1fr; gap: 1.5rem; }
   .facts { gap: .75rem; }
@@ -567,6 +609,6 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   .card:hover, .tile:hover { transform: none; }
   .live-dot::after { animation: none; }
   .toast { transition: opacity .3s; transform: none; }
-  .co-measure-line { transition: none; }
   .js .exp-card.reveal { transition: opacity .3s; }
+  .js .drafted, .js .drafted > *, .draft * { transition: none !important; }
 }

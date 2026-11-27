@@ -4,7 +4,7 @@
 //   drag around  → spin the whole cube
 //   double-click → pull the cube apart / put it back together
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
-//   projects     → a piece flies out of the cube for each project card and the card unfolds from it
+//   projects     → a piece flies out of the cube for each card, and the card draws itself around it
 //   backdrop     → a blueprint grid that bends around the cube, lit by a spotlight on the cursor
 //   callouts     → a light CAD layer: the cube's live width, an XYZ axis triad, a hint, and a
 //                  wireframe switch
@@ -107,7 +107,6 @@ function shadowTexture() {
 
 const ease = (t) => t * t * (3 - 2 * t);
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
-const easeOutBack = (t) => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2);
 
 // Tiny mirror cubelets orbiting the cube on tilted rings. They speed up while the page scrolls.
 function makeSatellites(material, count = 26) {
@@ -204,16 +203,19 @@ function init() {
 
   // CAD effects drawn on the cube itself
   const turnArc = makeTurnArc(cube);
-  const wireframe = makeWireframe(cube);
-  const cadTheme = () => [turnArc, wireframe].forEach((fx) => fx.setTheme(root.dataset.theme));
-  cadTheme();
+  const wireframe = makeWireframe(cube, { instant: reducedMotion });
+  const cadFx = [turnArc, wireframe];
 
   // The blueprint grid behind everything, drawn first every frame
   const backdrop = makeBackdrop();
-  backdrop.setTheme(root.dataset.theme);
   renderer.autoClear = false;
 
-  new MutationObserver(() => { cube.setFinish(finishFor()); backdrop.setTheme(root.dataset.theme); cadTheme(); })
+  function applyTheme() {
+    backdrop.setTheme(root.dataset.theme);
+    cadFx.forEach((fx) => fx.setTheme(root.dataset.theme));
+  }
+  applyTheme();
+  new MutationObserver(() => { cube.setFinish(finishFor()); applyTheme(); })
     .observe(root, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Soft shadow on an invisible floor, so the cube feels grounded
@@ -585,11 +587,11 @@ function init() {
   }
 
   // ---- Pieces that fly out of the cube and become cards ----
-  // About tiles, experience cards, project cards and achievement tiles each own one piece of the cube. As a card
+  // Experience cards and project cards each own one piece of the cube. As a card
   // scrolls into view its piece pops out, arcs across the page and shrinks into a small tile in the
-  // card's corner; the card unfolds from that tile. When the card nears the top of the screen the
+  // card's corner; the card draws itself around it. When the card nears the top of the screen the
   // piece lifts off again and flies home (the card stays open), so the cube is whole for the finale.
-  const flyItems = [...document.querySelectorAll('#about .facts .tile, #experience .exp-card, #projects .card, #skills .achievements .tile')];
+  const flyItems = [...document.querySelectorAll('#experience .exp-card, #projects .card')];
   // Corners first, then edges: every card gets a different piece
   const pieces = cube.cubies
     .filter((c) => !c.center)
@@ -601,15 +603,13 @@ function init() {
     badge.setAttribute('aria-hidden', 'true');
     card.appendChild(badge);
     card.classList.add('flies');
-    // The flight is its entrance instead of the fade (on the card, or the group that holds it)
-    card.classList.remove('reveal');
-    card.parentElement.closest('.reveal')?.classList.remove('reveal');
+    card.classList.remove('reveal'); // the flight and the drawing are its entrance instead of the fade
     const r = () => Math.random() - 0.5;
     return {
       card, badge,
       cubie: pieces[i % pieces.length],
       spinAxis: new THREE.Vector3(r(), r(), r()).normalize(),
-      f: 0, shown: -1, landed: null,
+      f: 0, landed: null,
     };
   });
 
@@ -634,6 +634,8 @@ function init() {
 
   function updateFlights() {
     const enabled = wide.matches && !reducedMotion && cube.introDone;
+    // Tells the page to leave drawing the cards to their landing pieces
+    root.classList.toggle('flights-on', wide.matches && !reducedMotion);
     const vh = window.innerHeight;
     const { slot, out, target, p, coreQ, q, land, spinQ, landTilt } = flyTmp;
     cube.object.updateWorldMatrix(true, true);
@@ -662,20 +664,12 @@ function init() {
         badge.classList.toggle('is-landed', landed);
       }
 
-      // The card unfolds from the tile during the last part of the flight in (and stays open after)
-      const u = enabled ? clamp01((arrive - 0.86) / 0.14) : 1;
-      if (u !== fl.shown) {
-        fl.shown = u;
-        const ox = badge.offsetLeft + badge.offsetWidth / 2;
-        const oy = badge.offsetTop + badge.offsetHeight / 2;
-        if (u >= 1) {
-          card.style.opacity = card.style.transform = card.style.transformOrigin = '';
-        } else {
-          card.style.transformOrigin = `${ox}px ${oy}px`;
-          card.style.opacity = Math.min(1, u * 2.5);
-          card.style.transform = `scale(${0.06 + 0.94 * Math.max(0, easeOutBack(u))})`;
-        }
-        card.classList.toggle('is-unfolding', u < 1);
+      // The card draws itself (outline traced from the corner, then its content) as the piece lands,
+      // and is wiped once it is off screen, so it draws again every time it comes back
+      if (enabled) {
+        const onScreen = bottom > 0 && top < vh;
+        if (!onScreen) card.classList.remove('is-drawn');
+        else if (arrive > 0.78) card.classList.add('is-drawn');
       }
 
       if (!cubie) continue;
@@ -724,7 +718,18 @@ function init() {
   }
 
   // ---- Callouts and the live size readout ----
-  const callouts = makeCallouts(stage, { onWireframe: (on) => wireframe.toggle(on) });
+  // The drafting (wireframe) view is the default look; the switch flips to the solid cube
+  wireframe.toggle(true);
+  const callouts = makeCallouts(stage);
+  const wireSwitch = document.querySelector('.wire-toggle');
+  if (wireSwitch) {
+    wireSwitch.hidden = false;
+    wireSwitch.addEventListener('click', () => {
+      const on = !wireframe.on;
+      wireframe.toggle(on);
+      wireSwitch.setAttribute('aria-pressed', String(on));
+    });
+  }
 
   // The cube's real size, from where its pieces actually are (not from the screen). A solved
   // mirror cube is a 57 mm box; scrambled, its lumpy shape is bigger, and it shrinks to 57.0 × 57.0
@@ -750,18 +755,53 @@ function init() {
   }
   const mmPerUnit = 57 / extents(true).x;
 
+  // Dimensions: the live bounding box of the pieces in the cube's own space, and for each axis the
+  // box edge to hang its dimension on (lowest on screen for width and depth, rightmost for height)
+  const dimMin = new THREE.Vector3();
+  const dimMax = new THREE.Vector3();
+  const dimP = new THREE.Vector3();
+  const dimScreen = (x, y, z) => {
+    dimP.set(x, y, z);
+    cube.core.localToWorld(dimP).project(camera);
+    return { x: (dimP.x + 1) / 2 * view.width, y: (1 - dimP.y) / 2 * view.height };
+  };
+  function dimensions() {
+    dimMin.set(Infinity, Infinity, Infinity);
+    dimMax.set(-Infinity, -Infinity, -Infinity);
+    for (const c of cube.cubies) {
+      if (c.flying || !c.group.visible) continue;
+      c.group.updateMatrix();
+      for (let i = 0; i < 8; i++) {
+        corner.set(
+          c.centre.x + (i & 1 ? 0.5 : -0.5) * c.size.x,
+          c.centre.y + (i & 2 ? 0.5 : -0.5) * c.size.y,
+          c.centre.z + (i & 4 ? 0.5 : -0.5) * c.size.z,
+        ).applyMatrix4(c.group.matrix);
+        dimMin.min(corner);
+        dimMax.max(corner);
+      }
+    }
+    if (!Number.isFinite(dimMin.x)) return [];
+    const lo = { x: dimMin.x, y: dimMin.y, z: dimMin.z };
+    const hi = { x: dimMax.x, y: dimMax.y, z: dimMax.z };
+    return ['x', 'y', 'z'].map((axis) => {
+      const [b1, b2] = ['x', 'y', 'z'].filter((k) => k !== axis);
+      let best = null;
+      for (let i = 0; i < 4; i++) {
+        const p = { [axis]: lo[axis], [b1]: i & 1 ? hi[b1] : lo[b1], [b2]: i & 2 ? hi[b2] : lo[b2] };
+        const q = { ...p, [axis]: hi[axis] };
+        const a = dimScreen(p.x, p.y, p.z);
+        const b = dimScreen(q.x, q.y, q.z);
+        const score = axis === 'y' ? a.x + b.x : a.y + b.y;
+        if (!best || score > best.score) best = { a, b, score };
+      }
+      return { name: axis, a: best.a, b: best.b, value: (hi[axis] - lo[axis]) * mmPerUnit };
+    });
+  }
+
   // Smoothed outline of the cube on screen, shared by the callouts and the backdrop
   const sbox = { left: 0, right: 0, top: 0, bottom: 0, ready: false };
   let calloutAlpha = 0;
-
-  // The cube's own X, Y and Z axes as the camera sees them (x right, y up, z toward the viewer),
-  // for the axis triad
-  const axisVec = new THREE.Vector3();
-  const axisDirections = () => ['x', 'y', 'z'].map((name) => {
-    axisVec.set(name === 'x' ? 1 : 0, name === 'y' ? 1 : 0, name === 'z' ? 1 : 0)
-      .transformDirection(cube.core.matrixWorld).transformDirection(camera.matrixWorldInverse);
-    return { name, x: axisVec.x, y: axisVec.y, z: axisVec.z };
-  });
 
   // One short line on what is going on, or what you can do
   function statusText() {
@@ -794,14 +834,15 @@ function init() {
     calloutAlpha += (want - calloutAlpha) * (1 - Math.exp(-dt * (want > calloutAlpha ? 4 : 10)));
     const idx = anchorK > 0.5 ? anchorSection + 1 : anchorSection;
     const section = sections[Math.min(idx, sections.length - 1)];
-    const width = extents(false).x * mmPerUnit;
+    const dims = calloutAlpha > 0.02 ? dimensions() : [];
+    const size = (name) => (dims.find((d) => d.name === name)?.value ?? 0).toFixed(1);
     const layout = section.dataset.side === 'center' ? 'side' : 'stack';
     callouts.update({
       box: sbox, W, layout,
       outer: anchor.x > 0.5 ? 1 : -1,
       alpha: calloutAlpha,
-      texts: { status: statusText(), width: `${width.toFixed(1)} mm` },
-      axes: axisDirections(),
+      texts: { status: statusText(), reading: dims.length ? `w ${size('x')} · d ${size('z')} mm` : '' },
+      dims,
     });
 
     // Backdrop: where the cube and the cursor are
