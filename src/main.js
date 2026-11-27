@@ -539,24 +539,32 @@ function init() {
       : defaultHint;
   }
 
-  // ---- Pieces that fly out of the cube and become the project cards ----
-  // Each card owns one corner piece. As the card scrolls into view its piece pops out of the cube,
-  // arcs across the page and shrinks into a small tile in the card's corner; the card unfolds from
-  // that tile. Once the card has scrolled off the top, the piece flies home again.
-  const flyHomes = [new THREE.Vector3(1, 1, 1), new THREE.Vector3(-1, 1, 1), new THREE.Vector3(1, -1, 1)];
-  const flights = [...document.querySelectorAll('#projects .card')].map((card, i) => {
+  // ---- Pieces that fly out of the cube and become cards ----
+  // Experience cards, project cards and achievement tiles each own one piece of the cube. As a card
+  // scrolls into view its piece pops out, arcs across the page and shrinks into a small tile in the
+  // card's corner; the card unfolds from that tile. When the card nears the top of the screen the
+  // piece lifts off again and flies home (the card stays open), so the cube is whole for the finale.
+  const flyItems = [...document.querySelectorAll('#experience .exp-card, #projects .card, #skills .achievements .tile')];
+  // Corners first, then edges: every card gets a different piece
+  const pieces = cube.cubies
+    .filter((c) => !c.center)
+    .sort((a, b) => (Math.abs(b.home.x) + Math.abs(b.home.y) + Math.abs(b.home.z))
+      - (Math.abs(a.home.x) + Math.abs(a.home.y) + Math.abs(a.home.z)));
+  const flights = flyItems.map((card, i) => {
     const badge = document.createElement('span');
     badge.className = 'card-cubie';
     badge.setAttribute('aria-hidden', 'true');
     card.appendChild(badge);
     card.classList.add('flies');
-    card.classList.remove('reveal'); // its entrance is the flight instead of the fade
+    // The flight is its entrance instead of the fade (on the card, or the group that holds it)
+    card.classList.remove('reveal');
+    card.parentElement.closest('.reveal')?.classList.remove('reveal');
     const r = () => Math.random() - 0.5;
     return {
       card, badge,
-      cubie: cube.cubies.find((c) => c.home.equals(flyHomes[i % flyHomes.length])),
+      cubie: pieces[i % pieces.length],
       spinAxis: new THREE.Vector3(r(), r(), r()).normalize(),
-      f: 0, shown: -1,
+      f: 0, shown: -1, landed: null,
     };
   });
 
@@ -593,15 +601,23 @@ function init() {
       const at = pageOffset(card);
       const top = at.y - window.scrollY;
       const bottom = top + card.offsetHeight;
+      // Side-by-side tiles: the right-hand one follows a beat later
+      const lag = card.offsetLeft > card.parentElement.firstElementChild.offsetLeft + 4 ? vh * 0.07 : 0;
       // In: the card's top travels from just below the screen to 62% down it
-      const enter = clamp01((vh * 1.05 - top) / (vh * 0.43));
-      // Out: once the card has left through the top, the piece goes home
-      const leave = clamp01(-bottom / (vh * 0.4));
-      const f = enabled ? ease(enter) * (1 - leave) : 0;
+      const arrive = enabled ? ease(clamp01((vh * 1.05 - top - lag) / (vh * 0.43))) : 0;
+      // Out: as the card's bottom edge nears the top of the screen, the piece goes home
+      const leave = clamp01((vh * 0.3 - bottom) / (vh * 0.3));
+      const f = arrive * (1 - ease(leave));
       fl.f = f;
 
-      // The card unfolds from the tile during the last part of the flight
-      const u = enabled ? clamp01((f - 0.86) / 0.14) : 1;
+      const landed = !enabled || f > 0.95;
+      if (landed !== fl.landed) {
+        fl.landed = landed;
+        badge.classList.toggle('is-landed', landed);
+      }
+
+      // The card unfolds from the tile during the last part of the flight in (and stays open after)
+      const u = enabled ? clamp01((arrive - 0.86) / 0.14) : 1;
       if (u !== fl.shown) {
         fl.shown = u;
         const ox = badge.offsetLeft + badge.offsetWidth / 2;
@@ -613,7 +629,7 @@ function init() {
           card.style.opacity = Math.min(1, u * 2.5);
           card.style.transform = `scale(${0.06 + 0.94 * Math.max(0, easeOutBack(u))})`;
         }
-        badge.classList.toggle('is-landed', !enabled || f > 0.95);
+        card.classList.toggle('is-unfolding', u < 1);
       }
 
       if (!cubie) continue;
