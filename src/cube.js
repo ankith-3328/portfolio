@@ -5,6 +5,9 @@
 // progress 7.4 = "7 moves done, the 8th is 40% through". Scrolling up undoes moves.
 //
 // Plus two bits of theatre: the cube builds itself on load, and does a victory flourish when solved.
+//
+// It is also playable: grab a face and twist a layer yourself (free play). While you are playing,
+// the scroll solve waits; main.js undoes your moves when you scroll again.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -41,6 +44,14 @@ function slab(axis, layer) {
 // A move: { axis: 'x'|'y'|'z', layer: -1|0|1, q: +1|-1 } = turn that layer by q·90° about +axis
 const invert = (m) => ({ ...m, q: -m.q });
 const angleOf = (m) => m.q * (Math.PI / 2);
+const QUARTER = Math.PI / 2;
+
+// Standard cube notation for a move: R, U' and so on (clockwise as seen looking at that face)
+const FACE = { x: ['L', 'R'], y: ['D', 'U'], z: ['B', 'F'] };
+export function notation(m) {
+  const clockwise = m.q === -m.layer;
+  return FACE[m.axis][m.layer > 0 ? 1 : 0] + (clockwise ? '' : '′');
+}
 
 function randomMoves(length, random = Math.random, lastAxis = null) {
   const axes = ['x', 'y', 'z'];
@@ -139,6 +150,12 @@ export class MirrorCube {
     this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
 
+    // Free play
+    this.userMoves = [];  // quarter turns the visitor made on top of the scroll position
+    this.twist = null;    // { axis, layer, angle }: a layer the visitor is turning right now
+    this.anims = [];      // queued layer animations: snapping a twist, or undoing one
+    this.explode = 0;     // 0 = assembled, 1 = fully pulled apart (exploded view)
+
     // Light that sweeps across the faces when the cube is solved
     this.glintLight = new THREE.PointLight(0xFFFFFF, 0, 9, 1.4);
     this.object.add(this.glintLight);
@@ -201,12 +218,32 @@ export class MirrorCube {
             group.add(rim);
           }
 
-          const cubie = { group, pos, quat: new THREE.Quaternion() };
+          const cubie = { group, pos, home: pos.clone(), quat: new THREE.Quaternion(), center: Math.abs(x) + Math.abs(y) + Math.abs(z) === 1 };
+          group.userData.cubie = cubie; // lets a raycast hit find its piece
           this.core.add(group);
           this.cubies.push(cubie);
         }
       }
     }
+
+    // The mechanism inside: a hub with three axles. Hidden until the cube is pulled apart.
+    const mech = new THREE.MeshStandardMaterial({ color: 0x3A302A, roughness: 0.4, metalness: 0.6 });
+    const hub = new THREE.Group();
+    hub.add(new THREE.Mesh(new THREE.SphereGeometry(0.36, 32, 20), mech));
+    for (const axis of ['x', 'y', 'z']) {
+      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.1, 20), mech);
+      if (axis === 'x') axle.rotation.z = Math.PI / 2;
+      if (axis === 'z') axle.rotation.x = Math.PI / 2;
+      hub.add(axle);
+      for (const side of [-1, 1]) {
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 24), this.rimMat);
+        cap.rotation.copy(axle.rotation);
+        cap.position[axis] = side * 1.06;
+        hub.add(cap);
+      }
+    }
+    this.hub = hub;
+    this.core.add(hub);
   }
 
   // Permanently turn one layer. sign = -1 undoes the move.
@@ -377,7 +414,77 @@ export class MirrorCube {
   get total() { return this.solution.length; }
   get isSolved() { return this.applied === this.total; }
 
+  // Pieces that would turn with a move on this layer
+  #inLayer(c, axis, layer) {
+    return Math.round(c.pos[axis]) === layer;
+  }
+
+  // Free play is anything the visitor did that the scroll solve does not know about
+  get freePlay() { return this.userMoves.length > 0 || this.twist !== null || this.anims.length > 0; }
+  get canTwist() { return this.introDone && this.celebration === Infinity && this.anims.length === 0; }
+
+  // Mid-way through a scroll move? Then layers are not lined up and nothing else may turn.
+  get atRest() {
+    const frac = this.progress - Math.floor(this.progress);
+    return frac === 0 || this.applied >= this.total || scrollEase(frac) === 0;
+  }
+
+  // The visitor drags a layer: angle in radians about +axis
+  setTwist(axis, layer, angle) {
+    this.twist = { axis, layer, angle };
+    this.draw();
+  }
+
+  // The visitor let go: settle on the nearest quarter turn, then make it permanent
+  releaseTwist(spin = 0) {
+    const t = this.twist;
+    if (!t) return;
+    const quarters = THREE.MathUtils.clamp(Math.round((t.angle + spin) / QUARTER), -2, 2);
+    this.twist = null;
+    this.anims.push({
+      axis: t.axis, layer: t.layer, from: t.angle, to: quarters * QUARTER, time: 0,
+      duration: 0.12 + 0.1 * Math.min(1, Math.abs(quarters * QUARTER - t.angle) / QUARTER),
+      done: () => {
+        for (let i = 0; i < Math.abs(quarters); i++) {
+          const move = { axis: t.axis, layer: t.layer, q: Math.sign(quarters) };
+          this.#apply(move, 1);
+          this.#recordUserMove(move);
+        }
+        if (quarters !== 0) this.onUserMove?.(this.userMoves.length, this.shapeSolved);
+      },
+    });
+  }
+
+  // Remember a free-play move, cancelling it against the last one if it undoes it
+  #recordUserMove(m) {
+    const last = this.userMoves[this.userMoves.length - 1];
+    if (last && last.axis === m.axis && last.layer === m.layer && last.q === -m.q) this.userMoves.pop();
+    else this.userMoves.push(m);
+  }
+
+  // Play the visitor's moves backwards, quickly, until the cube is where the scroll left it
+  undoUserMoves(each = 0.13) {
+    if (this.anims.length) return;
+    const step = () => {
+      const m = this.userMoves.pop();
+      if (!m) return this.onUndone?.();
+      this.anims.push({
+        axis: m.axis, layer: m.layer, from: 0, to: -angleOf(m), time: 0, duration: each,
+        done: () => { this.#apply(m, -1); step(); },
+      });
+    };
+    step();
+  }
+
+  // Every piece back home and facing the right way: a perfect box again
+  get shapeSolved() {
+    const eps = 1e-3;
+    return this.cubies.every((c) => c.pos.distanceToSquared(c.home) < eps &&
+      (c.center || Math.abs(c.quat.w) > 1 - eps));
+  }
+
   setProgress(p) {
+    if (this.freePlay) return this.draw(); // the scroll solve waits while the visitor plays
     p = Math.min(Math.max(p, 0), this.total);
     this.progress = p;
     const whole = Math.floor(p);
@@ -385,9 +492,23 @@ export class MirrorCube {
     while (this.applied < whole) this.#apply(this.solution[this.applied++], 1);
     while (this.applied > whole) this.#apply(this.solution[--this.applied], -1);
 
-    const frac = p - whole;
-    const moving = frac > 0 && this.applied < this.total ? this.solution[this.applied] : null;
-    this.#render(moving, moving ? scrollEase(frac) : 0);
+    this.draw();
+  }
+
+  // The layer that is turning right now, if any: { axis, layer, angle }
+  get #turning() {
+    if (this.twist) return this.twist;
+    const a = this.anims[0];
+    if (a) {
+      const k = clamp01(a.time / a.duration);
+      return { axis: a.axis, layer: a.layer, angle: a.from + (a.to - a.from) * easeOutCubic(k) };
+    }
+    const frac = this.progress - Math.floor(this.progress);
+    if (frac > 0 && this.applied < this.total) {
+      const m = this.solution[this.applied];
+      return { axis: m.axis, layer: m.layer, angle: angleOf(m) * scrollEase(frac) };
+    }
+    return null;
   }
 
   // ---------- Theatre ----------
@@ -421,12 +542,21 @@ export class MirrorCube {
       this.celebration += dt;
       if (this.celebration > CELEBRATION_LENGTH) this.celebration = Infinity;
     }
+    const a = this.anims[0];
+    if (a) {
+      a.time += dt;
+      if (a.time >= a.duration) {
+        this.anims.shift();
+        a.done(); // may queue the next one
+      }
+    }
   }
 
   // Draw every piece: its settled place, plus the layer that's mid-turn
-  #render(moving, amount) {
+  draw() {
+    const moving = this.#turning;
     const partial = moving
-      ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], angleOf(moving) * amount)
+      ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], moving.angle)
       : null;
 
     // Victory flourish: the top layer tips open on a hinge along its far edge
@@ -454,6 +584,8 @@ export class MirrorCube {
       };
     }
 
+    // The core shows only once the bomb has blown (it would poke out of the bomb)
+    this.hub.visible = this.introTime >= IN_FUSE;
     if (!this.introDone) this.#introWhole(this.introTime);
     else if (this.bomb.parent) {
       // Intro finished: reset and remove the bomb and effects for good
@@ -465,7 +597,7 @@ export class MirrorCube {
     for (const c of this.cubies) {
       c.group.position.copy(c.pos);
       c.group.quaternion.copy(c.quat);
-      if (moving && Math.round(c.pos[moving.axis]) === moving.layer) {
+      if (moving && this.#inLayer(c, moving.axis, moving.layer)) {
         c.group.position.applyQuaternion(partial);
         c.group.quaternion.premultiply(partial);
       }
@@ -475,6 +607,9 @@ export class MirrorCube {
         c.group.position.y += lid.lift;
         c.group.quaternion.premultiply(lid.turn);
       }
+
+      // Exploded view: every piece slides straight out from the core
+      if (this.explode > 0) c.group.position.multiplyScalar(1 + 0.42 * this.explode);
 
       // Intro: the big bang
       if (!this.introDone) {

@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="/src/style.css">
 
   <!-- Runs before the page paints: turns on JS-only effects and picks light/dark without a flash -->
   <script>
@@ -25,20 +25,11 @@
       root.dataset.theme = saved === 'light' ? 'light' : 'dark'; // dark unless the visitor picked light
     })();
   </script>
-  <script src="js/ui.js" defer></script>
 
-  <!-- The 3D cube: Three.js loaded straight from a CDN, so there is no build step. -->
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-        "lenis": "https://cdn.jsdelivr.net/npm/lenis@1.3.28/dist/lenis.mjs"
-      }
-    }
-  </script>
-  <script type="module" src="js/main.js"></script>
-  <script type="module" src="js/smooth.js"></script>
+  <!-- Three separate entry points on purpose: if the 3D fails, the page and its UI still work -->
+  <script type="module" src="/src/ui.js"></script>
+  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/smooth.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#about">Skip to content</a>
@@ -63,6 +54,26 @@
   <!-- The cube lives here. Decorative, so screen readers skip it. -->
   <aside class="stage" aria-hidden="true">
     <canvas></canvas>
+
+    <!-- Cuber's readout: the solve in standard notation, the current move lit up -->
+    <div class="hud">
+      <div class="hud-row">
+        <span class="hud-stage">Scrambled</span>
+        <span class="hud-count"><b class="hud-move">00</b> / <span class="hud-total">00</span></span>
+      </div>
+      <ol class="hud-moves"></ol>
+      <div class="hud-play">
+        <span class="hud-hint">Drag a face to twist · double-click to explode</span>
+        <span class="hud-free">
+          <span class="live-dot"></span>
+          <span class="hud-free-text">Free play</span>
+          <button class="hud-reset" type="button" tabindex="-1">Undo</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- Shown when someone solves the cube by hand -->
+    <p class="toast"></p>
   </aside>
 
   <main id="top">
