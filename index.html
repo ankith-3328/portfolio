@@ -51,7 +51,8 @@
     </button>
   </header>
 
-  <!-- The cube lives here. Decorative, so screen readers skip it. -->
+  <!-- The cube lives here, behind the content, travelling to whichever side the text is not on.
+       Decorative, so screen readers skip it. -->
   <aside class="stage" aria-hidden="true">
     <canvas></canvas>
 
@@ -79,7 +80,7 @@
   <main id="top">
 
     <!-- STAGE 0 · SCRAMBLED -->
-    <section class="hero" data-stage="Scrambled">
+    <section class="hero" data-stage="Scrambled" data-side="center">
       <p class="eyebrow reveal">Backend &amp; AI Engineer</p>
       <h1 class="reveal">Ankith C S</h1>
       <p class="lede reveal">Incoming AI Engineer at HiLabs · IIT Madras ’27</p>
@@ -92,7 +93,7 @@
     </section>
 
     <!-- STAGE 1 · CROSS -->
-    <section id="about" data-stage="Cross" aria-labelledby="about-title">
+    <section id="about" data-stage="Cross" data-side="left" aria-labelledby="about-title">
       <p class="eyebrow reveal">01 · Cross</p>
       <h2 id="about-title" class="reveal">About</h2>
       <div class="prose reveal">
@@ -108,7 +109,7 @@
     </section>
 
     <!-- STAGE 2 · F2L -->
-    <section id="experience" data-stage="F2L" aria-labelledby="exp-title">
+    <section id="experience" data-stage="F2L" data-side="right" aria-labelledby="exp-title">
       <p class="eyebrow reveal">02 · F2L</p>
       <h2 id="exp-title" class="reveal">Experience</h2>
 
@@ -158,7 +159,7 @@
     </section>
 
     <!-- STAGE 3 · OLL -->
-    <section id="projects" data-stage="OLL" aria-labelledby="proj-title">
+    <section id="projects" data-stage="OLL" data-side="left" aria-labelledby="proj-title">
       <p class="eyebrow reveal">03 · OLL</p>
       <h2 id="proj-title" class="reveal">Projects</h2>
 
@@ -198,7 +199,7 @@
     </section>
 
     <!-- STAGE 4 · PLL -->
-    <section id="skills" data-stage="PLL" aria-labelledby="skills-title">
+    <section id="skills" data-stage="PLL" data-side="right" aria-labelledby="skills-title">
       <p class="eyebrow reveal">04 · PLL</p>
       <h2 id="skills-title" class="reveal">Skills &amp; achievements</h2>
 
@@ -230,7 +231,7 @@
     </section>
 
     <!-- STAGE 5 · SOLVED -->
-    <section id="contact" class="contact" data-stage="Solved" aria-labelledby="contact-title">
+    <section id="contact" class="contact" data-stage="Solved" data-side="center" aria-labelledby="contact-title">
       <p class="eyebrow reveal">05 · Solved</p>
       <h2 id="contact-title" class="reveal">Solved.</h2>
       <p class="lede reveal">The cube’s done. If you’re building something with backends or LLMs, I’d like to hear about it.</p>

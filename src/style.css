@@ -23,8 +23,7 @@
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --stage-w: 44vw;        /* space kept free for the cube beside the text */
-  --canvas-w: 54vw;       /* the cube's area on the right (the canvas itself covers the window) */
+  --col-w: min(44rem, 46vw); /* a section's text column; the cube travels to the other side */
   --pad: clamp(1.5rem, 5vw, 5rem);
 }
 
@@ -145,7 +144,7 @@ ul, ol { padding: 0; list-style: none; }
 
 /* ---------- Cube HUD: the solve in cube notation ---------- */
 .hud {
-  position: absolute; right: 1.25rem; bottom: 1.25rem; z-index: 2;
+  position: absolute; left: 1.25rem; bottom: 1.25rem; z-index: 2;
   width: min(21rem, calc(100% - 2.5rem));
   padding: .8rem .95rem .7rem;
   font-family: var(--mono); color: var(--muted);
@@ -154,9 +153,12 @@ ul, ol { padding: 0; list-style: none; }
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   pointer-events: none;
   opacity: 0; transform: translateY(8px);
-  transition: opacity .8s ease 1.2s, transform .8s cubic-bezier(.2, .7, .2, 1) 1.2s;
+  transition: opacity .5s ease, transform .5s cubic-bezier(.2, .7, .2, 1);
 }
 .cube-ready .hud { opacity: 1; transform: none; }
+/* Hidden while the cube is centred (it would sit on the text) */
+.cube-ready .hud.is-away { opacity: 0; transform: translateY(8px); pointer-events: none; }
+.cube-ready .hud.is-away .hud-reset { pointer-events: none; }
 .hud-row {
   display: flex; justify-content: space-between; align-items: baseline;
   padding-bottom: .55rem; margin-bottom: .6rem; border-bottom: 1px solid var(--line);
@@ -194,7 +196,7 @@ ul, ol { padding: 0; list-style: none; }
 
 /* "Solved by hand" message, drops in above the cube */
 .toast {
-  position: absolute; left: calc(100% - var(--canvas-w) / 2); top: 5.5rem; z-index: 2;
+  position: absolute; left: 50%; top: 5.5rem; z-index: 2;
   padding: .6rem 1.1rem; white-space: nowrap;
   font: 500 .78rem var(--mono); letter-spacing: .04em; color: var(--ink);
   background: var(--surface); border: 1px solid var(--hover-line); border-radius: 999px;
@@ -209,19 +211,39 @@ ul, ol { padding: 0; list-style: none; }
 .toast.is-on { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
 
-/* ---------- Content column ---------- */
+/* ---------- Content: one column per section, alternating sides ---------- */
 main {
   position: relative; z-index: 2;
-  width: calc(100% - var(--stage-w));
   padding: 0 var(--pad);
+  /* Empty space lets drags through to the cube behind; the content itself stays clickable */
+  pointer-events: none;
 }
+main section > * { pointer-events: auto; }
 
 section {
   min-height: 100vh;
   padding: 8rem 0 5rem;
   display: flex; flex-direction: column; justify-content: center;
-  max-width: 44rem;
+  width: var(--col-w);
 }
+section[data-side="right"] { margin-left: auto; }
+
+/* Centred sections (hero, finale): the cube sits above the middle, the text gathers below it */
+section[data-side="center"] {
+  width: auto; max-width: 56rem; margin-inline: auto;
+  align-items: center; text-align: center;
+  justify-content: flex-end; padding-bottom: 9vh;
+}
+.contact .lede, .contact .mail-card { text-shadow: 0 1px 18px var(--bg); }
+section[data-side="center"] .eyebrow::after { content: ""; width: 1.75rem; height: 1px; background: currentColor; }
+section[data-side="center"] .lede { margin-inline: auto; }
+.hero h1 {
+  font-size: clamp(3.75rem, 10vw, 9rem); margin-bottom: 1.25rem;
+  /* A soft halo of page colour keeps the name readable where it crosses the cube */
+  text-shadow: 0 2px 40px var(--bg), 0 0 18px color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.hero .socials { justify-content: center; }
+.contact .mail-card { align-self: center; }
 
 .eyebrow {
   display: flex; align-items: center; gap: .75rem;
@@ -481,15 +503,18 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* ---------- No WebGL: drop the cube, center the content ---------- */
 .no-webgl .stage { display: none; }
-.no-webgl main { width: 100%; max-width: 50rem; margin: 0 auto; }
+.no-webgl main { max-width: 50rem; margin: 0 auto; pointer-events: auto; }
+.no-webgl section { width: auto; margin-inline: 0; }
 
 /* ---------- Tablets & phones: the cube becomes a soft backdrop ---------- */
 @media (max-width: 900px) {
-  :root { --stage-w: 100vw; --canvas-w: 100vw; }
+  :root { --col-w: 100%; }
   .stage { opacity: .15; pointer-events: none; }
   .hud, .toast { display: none; }
-  main { width: 100%; }
+  main { pointer-events: auto; }
   section { min-height: auto; padding: 7rem 0 3rem; }
+  section[data-side="right"] { margin-left: 0; }
+  section[data-side="center"] { justify-content: center; padding-bottom: 3rem; }
   .hero { min-height: 100vh; min-height: 100svh; }
 }
 @media (max-width: 640px) {

@@ -6,8 +6,9 @@
 //   cursor       → the cube leans toward it and the reflections slide across the mirror plates
 //   projects     → a piece flies out of the cube for each project card and the card unfolds from it
 //
-// The canvas covers the whole window (so pieces can fly over the text), but the camera is
-// shifted so the cube itself sits in the right-hand part of the screen.
+// The canvas covers the whole window, behind the content. Each section's text sits on one side and
+// the cube travels to the other: the camera's view is shifted (and pulled closer or further) as you
+// scroll, so the cube glides across the screen between sections.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -175,11 +176,14 @@ function init() {
   root.classList.add('cube-ready'); // the email card waits for the cube
   if (import.meta.env.DEV) window.__cube = cube; // for poking at it from the console while developing
 
-  // tilt: leans toward the cursor.  spin: what the visitor drags around.
+  // tilt: leans toward the cursor.  travel: turns as the cube crosses the screen.
+  // spin: what the visitor drags around.
   const tilt = new THREE.Group();
+  const travel = new THREE.Group();
   const spin = new THREE.Group();
   spin.add(cube.object);
-  tilt.add(spin);
+  travel.add(spin);
+  tilt.add(travel);
   scene.add(tilt);
   spin.rotation.set(0.05, -0.35, 0);
 
@@ -202,29 +206,36 @@ function init() {
   scene.add(shadow);
   let shadowFade = 0;
 
-  // ---- Keep the canvas sharp at any size ----
-  // On wide screens the cube lives in the right 54% of the window; on narrow ones it is centred.
+  // ---- Keep the canvas sharp at any size, and put the cube where the layout wants it ----
   const wide = matchMedia('(min-width: 901px)');
+  const view = { width: 1, height: 1, fit: 1 };
   function resize() {
     const width = stage.clientWidth;
     const height = stage.clientHeight;
     if (!width || !height) return;
     renderer.setSize(width, height, false);
-    const area = wide.matches ? 0.54 : 1;
-    const centreX = width - (width * area) / 2;
-    // Render a wider, imaginary image centred on the cube, and show only its left part
-    const fullWidth = 2 * centreX;
-    camera.aspect = fullWidth / height;
-    // Move the camera back when the cube's area is narrow, so the whole cube fits
-    const areaAspect = (width * area) / height;
-    const fit = Math.max(1, 2.9 / (Math.tan(THREE.MathUtils.degToRad(16)) * baseCameraPos.length() * areaAspect));
-    camera.position.copy(baseCameraPos).multiplyScalar(fit);
-    camera.lookAt(0, 0, 0);
-    camera.setViewOffset(fullWidth, height, 0, 0, width, height);
-    camera.updateProjectionMatrix();
+    camera.aspect = width / height;
+    // The cube gets about half the screen on wide layouts: back off further when that half is narrow
+    const areaAspect = (width * (wide.matches ? 0.5 : 1)) / height;
+    view.fit = Math.max(1, 2.9 / (Math.tan(THREE.MathUtils.degToRad(16)) * baseCameraPos.length() * areaAspect));
+    view.width = width;
+    view.height = height;
   }
   new ResizeObserver(resize).observe(stage);
   resize();
+
+  // Where the cube sits: x, y as fractions of the screen, and its size (1 = normal)
+  const anchor = { x: 0.5, y: 0.42, size: 1.1, turn: 0 };
+  const camDir = baseCameraPos.clone().normalize();
+  function placeCamera() {
+    const { width, height, fit } = view;
+    camera.position.copy(camDir).multiplyScalar(baseCameraPos.length() * fit / anchor.size);
+    camera.lookAt(0, 0, 0);
+    // Shift the picture so the point the camera looks at lands at (x, y) on screen
+    camera.setViewOffset(width, height, width / 2 - anchor.x * width, height / 2 - anchor.y * height, width, height);
+    camera.updateProjectionMatrix();
+  }
+  placeCamera();
 
   // ---- Scroll → solve progress, plus the exploded-view beats between sections ----
   const sections = [...document.querySelectorAll('main section')];
@@ -261,6 +272,42 @@ function init() {
   new ResizeObserver(() => { measure(); readScroll(); }).observe(document.body);
   measure();
   readScroll();
+
+  // ---- The travelling cube: one resting place per section, glided between as you scroll ----
+  // Text on the left puts the cube on the right and the other way round; centred sections
+  // (the hero and the finale) put the cube in the middle, larger.
+  const restFor = (s) => {
+    if (!wide.matches) return { x: 0.5, y: 0.45, size: 0.95 };
+    const side = s.dataset.side;
+    if (side === 'left') return { x: 0.75, y: 0.5, size: 0.88 };
+    if (side === 'right') return { x: 0.25, y: 0.5, size: 0.88 };
+    return s.classList.contains('hero') ? { x: 0.5, y: 0.38, size: 0.96 } : { x: 0.5, y: 0.3, size: 0.74 };
+  };
+  let sectionMids = [];
+  const measureMids = () => {
+    sectionMids = sections.map((s) => s.getBoundingClientRect().top + window.scrollY + s.offsetHeight / 2);
+  };
+  window.addEventListener('resize', measureMids);
+  new ResizeObserver(measureMids).observe(document.body);
+  measureMids();
+
+  function updateAnchor() {
+    const mid = window.scrollY + window.innerHeight / 2;
+    let i = 0;
+    while (i < sectionMids.length - 2 && mid > sectionMids[i + 1]) i++;
+    const span = sectionMids[i + 1] - sectionMids[i];
+    const t = span > 0 ? clamp01((mid - sectionMids[i]) / span) : 0;
+    // Rest for a while at each section, then glide: most of the move happens mid-way between them
+    const k = reducedMotion ? (t < 0.5 ? 0 : 1) : ease(clamp01((t - 0.22) / 0.56));
+    const a = restFor(sections[i]);
+    const b = restFor(sections[i + 1] || sections[i]);
+    anchor.x = a.x + (b.x - a.x) * k;
+    anchor.y = a.y + (b.y - a.y) * k;
+    // A little bigger in the middle of the trip: it swings toward the viewer as it crosses
+    anchor.size = (a.size + (b.size - a.size) * k) * (1 + 0.08 * Math.sin(Math.PI * k));
+    // Half a turn per crossing, so the cube shows a new side in every section
+    anchor.turn = (i + k) * Math.PI * 0.5;
+  }
 
   // ---- Pointer: parallax, hover, twisting layers, spinning the cube ----
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 }; // -1..1 over the window, and a smoothed copy
@@ -416,6 +463,19 @@ function init() {
   // ---- Free play, undo, and solving it by hand ----
   const toast = stage.querySelector('.toast');
   let toastTimer = null;
+  const hudEl = stage.querySelector('.hud');
+  let hudX = -1;
+  // The moves panel and the toast follow the cube along the bottom / top of the screen
+  function followCube() {
+    const x = anchor.x * view.width;
+    toast.style.left = `${x}px`;
+    const off = Math.abs(anchor.x - 0.5) < 0.15 || !wide.matches;
+    hudEl.classList.toggle('is-away', off);
+    const w = hudEl.offsetWidth;
+    const left = Math.round(Math.min(Math.max(x - w / 2, 16), view.width - w - 16));
+    if (left !== hudX) { hudX = left; hudEl.style.left = `${left}px`; }
+  }
+
   function showToast(text) {
     toast.textContent = text;
     toast.classList.add('is-on');
@@ -655,6 +715,11 @@ function init() {
     const time = clock.elapsedTime;
     cube.tick(dt);
 
+    // Glide the cube toward this scroll position's place on screen, turning as it travels
+    updateAnchor();
+    placeCamera();
+    travel.rotation.y = anchor.turn;
+
     // Free play holds the scroll solve. Scroll noticeably away and the visitor's moves rewind.
     if (!cube.freePlay && !undoing) frozenTarget = null;
     if (frozenTarget !== null && !undoing && !cube.twist && !cube.anims.length &&
@@ -739,6 +804,7 @@ function init() {
     }
 
     updateHud();
+    followCube();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
