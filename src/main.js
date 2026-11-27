@@ -716,7 +716,6 @@ function init() {
 
   // ---- Callouts and the live size readout ----
   const callouts = makeCallouts(stage);
-  const pad2 = (n) => String(n).padStart(2, '0');
 
   // The cube's real size, from where its pieces actually are (not from the screen). A solved
   // mirror cube is a 57 mm box; scrambled, its lumpy shape is bigger, and it shrinks to 57.0 × 57.0
@@ -752,7 +751,7 @@ function init() {
     if (cube.freePlay) return n ? `free play · ${n} move${n === 1 ? '' : 's'}` : 'free play';
     if (cube.isSolved) return 'every piece home';
     const out = flights.filter((fl) => fl.f > 0).length;
-    if (out) return `${out} piece${out === 1 ? '' : 's'} on the cards`;
+    if (out) return ''; // nothing to do while pieces are out on the cards
     const left = cube.total - cube.applied;
     if (left <= 3) return `${left} to go · finish it by hand`;
     return 'drag a face to twist';
@@ -783,13 +782,7 @@ function init() {
       box: sbox, W, layout,
       outer: anchor.x > 0.5 ? 1 : -1,
       alpha: calloutAlpha,
-      texts: {
-        title: `${pad2(idx)} · ${section.dataset.stage}`,
-        // Beside a text column the width has its own measurement line; centred, it goes here
-        sub: `${pad2(cube.applied)} / ${cube.total} moves${layout === 'side' ? ` · ${width.toFixed(1)} mm` : ''}`,
-        status: statusText(),
-        width: `${width.toFixed(1)} mm`,
-      },
+      texts: { status: statusText(), width: `${width.toFixed(1)} mm` },
     });
 
     // Backdrop: where the cube and the cursor are

@@ -1,13 +1,12 @@
-// A light CAD touch around the cube: thin corner brackets framing it, one compact label (stage,
-// move count, a short status line) beside the top corner, and, next to text columns, a single
-// width measurement underneath. Lines are an SVG over the canvas, the label is plain HTML, and
-// both follow the cube's outline on screen every frame.
+// A light CAD touch around the cube: a width measurement, and a short hint line beside the
+// top corner when there is something worth saying. The line is an SVG over the canvas, the text
+// is plain HTML, and both follow the cube's outline on screen every frame.
 //
 // Two layouts:
-//   'stack' (cube beside a text column): label at the top corner on the cube's open side,
+//   'stack' (cube beside a text column): hint at the top corner on the cube's open side,
 //            width measurement under the cube
-//   'side'  (cube centred: hero and finale): label at the top right, no measurement (the text
-//            sits right under the cube there)
+//   'side'  (cube centred: hero and finale): hint at the top right with the width as a small
+//            reading under it (the text sits right under the cube there)
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -26,14 +25,13 @@ export function makeCallouts(container) {
 
   const svg = el('svg', { class: 'co-lines' }, root);
   // pathLength="1" lets CSS draw the lines in from nothing, whatever their real length
-  const brackets = el('path', { pathLength: 1, class: 'co-bracket' }, svg);
   const measure = el('path', { pathLength: 1, class: 'co-measure-line' }, svg);
 
   const tag = document.createElement('div');
   tag.className = 'co-tag';
-  tag.innerHTML = '<b></b><span></span><em></em>';
+  tag.innerHTML = '<em></em><span></span>';
   root.appendChild(tag);
-  const [title, sub, status] = tag.children;
+  const [status, reading] = tag.children;
 
   const size = document.createElement('div');
   size.className = 'co-size';
@@ -47,7 +45,7 @@ export function makeCallouts(container) {
   return {
     // box: the cube's outline on screen {left, right, top, bottom}; W: window width
     // layout: 'stack' or 'side'; outer: +1 (the cube's open side is to the right) or -1
-    // alpha: 0..1; texts: { title, sub, status, width }
+    // alpha: 0..1; texts: { status, width } (status may be empty)
     update({ box, W, layout, outer, alpha, texts }) {
       root.style.opacity = alpha;
       const visible = alpha > 0.02;
@@ -57,23 +55,21 @@ export function makeCallouts(container) {
       }
       if (!visible) return;
 
-      const key = `${texts.title}|${texts.sub}|${texts.status}`;
+      const readingText = layout === 'side' ? texts.width : '';
+      const key = `${texts.status}|${readingText}`;
       if (key !== tagText) {
         tagText = key;
-        title.textContent = texts.title;
-        sub.textContent = texts.sub;
         status.textContent = texts.status;
+        reading.textContent = readingText;
+        tag.style.display = key === '|' ? 'none' : '';
         tagW = tag.offsetWidth;
       }
 
       const { left, right, top, bottom } = box;
-      const o = 14, L = 14; // brackets: offset from the outline, arm length
-      const bl = left - o, br = right + o, bt = top - o, bb = bottom + o;
-      brackets.setAttribute('d',
-        `M${bl},${bt + L} V${bt} H${bl + L} M${br - L},${bt} H${br} V${bt + L} ` +
-        `M${br},${bb - L} V${bb} H${br - L} M${bl + L},${bb} H${bl} V${bb - L}`);
+      const o = 14; // breathing room around the outline
+      const bl = left - o, br = right + o, bt = top, bb = bottom + o;
 
-      // The label sits just outside the top corner on the open side, aligned to the bracket
+      // The hint sits just outside the top corner on the cube's open side
       const s = layout === 'side' ? 1 : outer;
       const x = s > 0 ? br + 16 : bl - 16 - tagW;
       tag.style.textAlign = s > 0 ? 'left' : 'right';

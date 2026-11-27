@@ -152,30 +152,29 @@ ul, ol { padding: 0; list-style: none; }
 }
 .stage canvas:active { cursor: grabbing; }
 
-/* ---------- CAD touch around the cube: brackets, one label, one measurement ---------- */
+/* ---------- CAD touch around the cube: a width measurement and a short hint ---------- */
 .callouts {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   transition: opacity .25s linear;
 }
 .co-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.co-bracket, .co-measure-line {
+.co-measure-line {
   fill: none; vector-effect: non-scaling-stroke;
+  stroke: color-mix(in srgb, var(--muted) 60%, transparent); stroke-width: 1;
   stroke-dasharray: 1; stroke-dashoffset: 1;
-  transition: stroke-dashoffset .9s cubic-bezier(.6, .05, .25, 1);
+  transition: stroke-dashoffset .9s cubic-bezier(.6, .05, .25, 1) .15s;
 }
-.co-bracket { stroke: color-mix(in srgb, var(--ink-2) 70%, transparent); stroke-width: 1; }
-.co-measure-line { stroke: color-mix(in srgb, var(--muted) 60%, transparent); stroke-width: 1; transition-delay: .15s; }
-.callouts.is-on .co-bracket, .callouts.is-on .co-measure-line { stroke-dashoffset: 0; }
+.callouts.is-on .co-measure-line { stroke-dashoffset: 0; }
 
 .co-tag, .co-size {
   position: absolute; left: 0; top: 0; white-space: nowrap;
   font-family: var(--mono); opacity: 0; transition: opacity .4s ease .35s;
 }
 .callouts.is-on .co-tag, .callouts.is-on .co-size { opacity: 1; }
-.co-tag b, .co-tag span, .co-tag em { display: block; font-style: normal; }
-.co-tag b { font: 500 .66rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
-.co-tag span { font-size: .66rem; line-height: 1.5; letter-spacing: .03em; color: var(--muted); }
-.co-tag em { margin-top: .15rem; font-size: .62rem; letter-spacing: .03em; color: var(--accent); }
+.co-tag span, .co-tag em { display: block; font-style: normal; letter-spacing: .03em; line-height: 1.6; }
+.co-tag em { font-size: .64rem; color: var(--accent); }
+.co-tag span { font-size: .6rem; color: var(--muted); }
+.co-tag em:empty, .co-tag span:empty { display: none; }
 .co-size {
   padding: 0 .4rem; font-size: .6rem; line-height: 16px; letter-spacing: .06em; color: var(--muted);
   background: var(--bg);
@@ -536,6 +535,6 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   .card:hover, .tile:hover { transform: none; }
   .live-dot::after { animation: none; }
   .toast { transition: opacity .3s; transform: none; }
-  .co-bracket, .co-measure-line { transition: none; }
+  .co-measure-line { transition: none; }
   .js .exp-card.reveal { transition: opacity .3s; }
 }
