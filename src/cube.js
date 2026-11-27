@@ -47,13 +47,6 @@ const invert = (m) => ({ ...m, q: -m.q });
 const angleOf = (m) => m.q * (Math.PI / 2);
 const QUARTER = Math.PI / 2;
 
-// Standard cube notation for a move: R, U' and so on (clockwise as seen looking at that face)
-const FACE = { x: ['L', 'R'], y: ['D', 'U'], z: ['B', 'F'] };
-export function notation(m) {
-  const clockwise = m.q === -m.layer;
-  return FACE[m.axis][m.layer > 0 ? 1 : 0] + (clockwise ? '' : '′');
-}
-
 function randomMoves(length, random = Math.random, lastAxis = null) {
   const axes = ['x', 'y', 'z'];
   const moves = [];

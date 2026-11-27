@@ -142,58 +142,6 @@ ul, ol { padding: 0; list-style: none; }
 }
 .stage canvas:active { cursor: grabbing; }
 
-/* ---------- Cube HUD: the solve in cube notation ---------- */
-.hud {
-  position: absolute; left: 1.25rem; bottom: 1.25rem; z-index: 2;
-  width: min(21rem, calc(100% - 2.5rem));
-  padding: .8rem .95rem .7rem;
-  font-family: var(--mono); color: var(--muted);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 12px;
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-  opacity: 0; transform: translateY(8px);
-  transition: opacity .5s ease, transform .5s cubic-bezier(.2, .7, .2, 1);
-}
-.cube-ready .hud { opacity: 1; transform: none; }
-/* Hidden while the cube is centred (it would sit on the text) */
-.cube-ready .hud.is-away { opacity: 0; transform: translateY(8px); pointer-events: none; }
-.cube-ready .hud.is-away .hud-reset { pointer-events: none; }
-.hud-row {
-  display: flex; justify-content: space-between; align-items: baseline;
-  padding-bottom: .55rem; margin-bottom: .6rem; border-bottom: 1px solid var(--line);
-  font-size: .68rem; letter-spacing: .14em; text-transform: uppercase;
-}
-.hud-stage { color: var(--accent); }
-.hud-move { font-weight: 500; color: var(--ink); }
-.hud-moves { display: flex; flex-wrap: wrap; gap: .1rem .1rem; font-size: .72rem; }
-.hud-moves li {
-  min-width: 2em; padding: .05rem .2rem; text-align: center; border-radius: 4px;
-  color: var(--muted); font-weight: 500;
-  transition: color .3s, background-color .3s;
-}
-.hud-moves li.is-done { color: var(--ink); }
-.hud-moves li.is-now { color: var(--bg); background: var(--accent); }
-/* While the visitor plays, the scripted solve steps back */
-.hud-moves { transition: opacity .4s; }
-.cube-free .hud-moves { opacity: .35; }
-
-.hud-play { position: relative; margin-top: .6rem; min-height: 1.3rem; font-size: .64rem; letter-spacing: .03em; }
-.hud-hint, .hud-free { transition: opacity .35s ease, transform .35s ease; }
-.hud-free {
-  position: absolute; inset: 0 0 auto 0; display: flex; align-items: center; gap: .6rem;
-  color: var(--accent); opacity: 0; transform: translateY(4px); white-space: nowrap;
-}
-.cube-free .hud-hint { opacity: 0; transform: translateY(-4px); }
-.cube-free .hud-free { opacity: 1; transform: none; pointer-events: auto; }
-.hud-reset {
-  font: inherit; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
-  color: var(--ink-2); background: none; padding: .15rem .55rem;
-  margin-left: auto; white-space: nowrap;
-  border: 1px solid var(--line); border-radius: 999px; transition: color .2s, border-color .2s;
-}
-.hud-reset:hover { color: var(--accent); border-color: var(--accent); }
-
 /* "Solved by hand" message, drops in above the cube */
 .toast {
   position: absolute; left: 50%; top: 5.5rem; z-index: 2;
@@ -511,7 +459,7 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 @media (max-width: 900px) {
   :root { --col-w: 100%; }
   .stage { opacity: .15; pointer-events: none; }
-  .hud, .toast { display: none; }
+  .toast { display: none; }
   main { pointer-events: auto; }
   section { min-height: auto; padding: 7rem 0 3rem; }
   section[data-side="right"] { margin-left: 0; }
@@ -541,6 +489,6 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   .js .reveal { transform: none; transition: opacity .3s; }
   .card:hover, .tile:hover { transform: none; }
   .live-dot::after { animation: none; }
-  .hud, .toast, .hud-free, .hud-hint { transition: opacity .3s; transform: none; }
+  .toast { transition: opacity .3s; transform: none; }
   .js .exp-card.reveal { transition: opacity .3s; }
 }

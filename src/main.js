@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { MirrorCube, LAUNCH_AT, notation } from './cube.js';
+import { MirrorCube, LAUNCH_AT } from './cube.js';
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -246,7 +246,6 @@ function init() {
   let target = 0;
   let current = 0;
   let scrollBurst = 0;  // 0..1: how close the viewport centre is to a section boundary
-  let stageName = sections[0]?.dataset.stage || '';
   let lastScrollY = window.scrollY;
   let scrollSpeed = 0;  // px per second, smoothed
 
@@ -262,10 +261,6 @@ function init() {
       const d = (mid - b) / reach;
       if (Math.abs(d) < 1) scrollBurst = Math.max(scrollBurst, (1 - d * d) ** 2);
     });
-    // The section under the middle of the screen names the stage
-    let name = stageName;
-    sections.forEach((s, i) => { if (i === 0 || mid >= boundaries[i - 1]) name = s.dataset.stage; });
-    stageName = name;
   }
   window.addEventListener('scroll', readScroll, { passive: true });
   window.addEventListener('resize', () => { measure(); readScroll(); });
@@ -517,18 +512,8 @@ function init() {
   // ---- Free play, undo, and solving it by hand ----
   const toast = stage.querySelector('.toast');
   let toastTimer = null;
-  const hudEl = stage.querySelector('.hud');
-  let hudX = -1;
-  // The moves panel and the toast follow the cube along the bottom / top of the screen
-  function followCube() {
-    const x = anchor.x * view.width;
-    toast.style.left = `${x}px`;
-    const off = Math.abs(anchor.x - 0.5) < 0.15 || !wide.matches;
-    hudEl.classList.toggle('is-away', off);
-    const w = hudEl.offsetWidth;
-    const left = Math.round(Math.min(Math.max(x - w / 2, 16), view.width - w - 16));
-    if (left !== hudX) { hudX = left; hudEl.style.left = `${left}px`; }
-  }
+  // The toast appears above the cube, wherever it is on screen
+  const followCube = () => { toast.style.left = `${anchor.x * view.width}px`; };
 
   function showToast(text) {
     toast.textContent = text;
@@ -550,12 +535,6 @@ function init() {
     undoing = false;
     frozenTarget = null;
   };
-  stage.querySelector('.hud-reset').addEventListener('click', () => {
-    if (!cube.twist && !undoing && !cube.anims.length && cube.userMoves.length) {
-      undoing = true;
-      cube.undoUserMoves();
-    }
-  });
 
   // Direction from the cube to the camera, flattened to horizontal (world coordinates)
   function viewerDirection() {
@@ -573,50 +552,6 @@ function init() {
     const r = canvas.getBoundingClientRect();
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
   };
-
-  // ---- The HUD: the solve written out in cube notation ----
-  const hud = {
-    stage: stage.querySelector('.hud-stage'),
-    move: stage.querySelector('.hud-move'),
-    total: stage.querySelector('.hud-total'),
-    moves: stage.querySelector('.hud-moves'),
-    hint: stage.querySelector('.hud-hint'),
-    freeText: stage.querySelector('.hud-free-text'),
-  };
-  const pad = (n) => String(n).padStart(2, '0');
-  hud.total.textContent = pad(cube.total);
-  const moveItems = cube.solution.map((m) => {
-    const li = document.createElement('li');
-    li.textContent = notation(m);
-    hud.moves.appendChild(li);
-    return li;
-  });
-  const defaultHint = hud.hint.textContent;
-  let hudKey = '';
-  function updateHud() {
-    const intro = !cube.introDone;
-    const free = cube.freePlay;
-    const done = cube.applied;
-    const turning = !free && cube.progress > done && done < cube.total;
-    const key = [intro, done, turning, free, cube.userMoves.length, stageName, undoing].join('|');
-    if (key === hudKey) return;
-    hudKey = key;
-
-    hud.stage.textContent = intro ? 'Assembling' : stageName;
-    hud.move.textContent = pad(done);
-    moveItems.forEach((li, i) => {
-      li.classList.toggle('is-done', i < done);
-      li.classList.toggle('is-now', i === done && turning);
-    });
-    root.classList.toggle('cube-free', free);
-    const n = cube.userMoves.length;
-    hud.freeText.textContent = undoing ? 'Rewinding…'
-      : n ? `Free play · ${n} move${n === 1 ? '' : 's'} · scroll resets` : 'Free play';
-    const left = cube.total - done;
-    hud.hint.textContent = !free && left > 0 && left <= 3 && cube.introDone
-      ? `${left} move${left === 1 ? '' : 's'} from solved. Try finishing it by hand.`
-      : defaultHint;
-  }
 
   // ---- Pieces that fly out of the cube and become cards ----
   // About tiles, experience cards, project cards and achievement tiles each own one piece of the cube. As a card
@@ -858,7 +793,6 @@ function init() {
       }
     }
 
-    updateHud();
     followCube();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
