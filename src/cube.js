@@ -4,7 +4,11 @@
 // The scroll position decides how many solution moves are done:
 // progress 7.4 = "7 moves done, the 8th is 40% through". Scrolling up undoes moves.
 //
-// Plus two bits of theatre: the cube builds itself on load, and does a victory flourish when solved.
+// Plus two bits of theatre: the cube assembles itself on load (the core drops in, then pieces split
+// off one another, from the core outward), and it does a victory flourish when solved.
+//
+// It is also playable: grab a face and twist a layer yourself (free play). While you are playing,
+// the scroll solve waits; main.js undoes your moves when you scroll again.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -41,6 +45,7 @@ function slab(axis, layer) {
 // A move: { axis: 'x'|'y'|'z', layer: -1|0|1, q: +1|-1 } = turn that layer by q·90° about +axis
 const invert = (m) => ({ ...m, q: -m.q });
 const angleOf = (m) => m.q * (Math.PI / 2);
+const QUARTER = Math.PI / 2;
 
 function randomMoves(length, random = Math.random, lastAxis = null) {
   const axes = ['x', 'y', 'z'];
@@ -74,7 +79,6 @@ const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const smooth = (t) => t * t * (3 - 2 * t);
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
 const easeInCubic = (t) => t * t * t;
-const easeOutExpo = (t) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t));
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
@@ -91,15 +95,23 @@ function lidOpen(t) {
   return 0;
 }
 
-// Intro: a bomb's fuse burns down, it blows apart into the cube's pieces, and they pull back together
-const IN_FUSE = 1.0;      // bomb appears and its fuse burns
-const IN_SWELL = 0.35;    // last part of the fuse: the bomb swells and trembles
-const IN_BOOM = 0.55;     // pieces blast outward
-const IN_HANG = 0.3;      // pieces drift in mid-air
-const IN_STAGGER = 0.3;   // pieces start their return at slightly different moments
-const IN_RETURN = 0.6;    // each piece's pull back into its slot
-const IN_SNAP = 0.3;      // the whole cube squashes as it locks
-const IN_FIREBALL = 0.42; // the flash of fire at the explosion
+// Intro: self-assembly, in seconds from page load.
+// The bare core (hub and axles) drops in and bounces. Then the pieces grow outward in generations,
+// like cells splitting: centres slide out of the core, each edge splits off a centre, and each
+// corner splits off an edge. Every piece twists a quarter turn as it emerges and snaps into place.
+const IN_DROP_START = 0.08;          // core starts falling
+const IN_DROP = 0.3;                 // and slams down this much later
+const IN_GEN = [0, 0.5, 0.74, 0.98]; // when each generation starts: [core, centres, edges, corners]
+const IN_GROW = 0.22;                // one piece's trip out of its parent
+const IN_STAGGER = 0.05;             // pieces of one generation start at slightly different moments
+const IN_SETTLE = 0.32;              // the final lock
+const IN_LOCK = IN_GEN[3] + IN_STAGGER + IN_GROW * 0.75; // the moment the last corners hit
+
+// A hard snap: shoots past the slot and kicks back
+const snap = (t) => 1 + 3.6 * Math.pow(t - 1, 3) + 2.6 * Math.pow(t - 1, 2);
+
+// A quick, damped squash: 0 → up → 0 over `length` seconds after it starts
+const pulse = (x, length) => (x > 0 && x < length ? Math.sin(Math.PI * x / length) * (1 - x / length) : 0);
 
 // Victory flourish: a glint of light sweeps across the now-perfect box, then the top layer
 // hinges open like a lid, the email pops out, and the lid closes.
@@ -134,10 +146,21 @@ export class MirrorCube {
     this.progress = 0;
 
     this.introTime = intro ? 0 : Infinity;
-    this.introLength = this.#planIntro();
+    this.introLength = IN_LOCK + IN_SETTLE;
+    if (intro) this.#planAssembly();
+    // A warm flash in front of the cube each time a generation locks in
+    this.popLight = new THREE.PointLight(0xFFC48A, 0, 12, 1.6);
+    this.popLight.position.set(2.5, 2.5, 3.5);
+    this.object.add(this.popLight);
     this.celebration = Infinity; // seconds since the last "solved" flourish
     this.lidToward = new THREE.Vector3(0, 0, 1); // which side of the lid opens (faces the viewer)
     this.calm = !intro;          // reduced motion: keep only the gentle parts
+
+    // Free play
+    this.userMoves = [];  // quarter turns the visitor made on top of the scroll position
+    this.twist = null;    // { axis, layer, angle }: a layer the visitor is turning right now
+    this.anims = [];      // queued layer animations: snapping a twist, or undoing one
+    this.explode = 0;     // 0 = assembled, 1 = fully pulled apart (exploded view)
 
     // Light that sweeps across the faces when the cube is solved
     this.glintLight = new THREE.PointLight(0xFFFFFF, 0, 9, 1.4);
@@ -147,7 +170,7 @@ export class MirrorCube {
   }
 
   #build() {
-    const bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.55, metalness: 0.1 });
+    const bodyMat = this.bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.55, metalness: 0.1 });
     const mirrorMat = this.mirrorMat = new THREE.MeshStandardMaterial({ color: FINISHES.gold.plate.clone(), roughness: 0.07, metalness: 1 });
     const rimMat = this.rimMat = new THREE.MeshStandardMaterial({ color: FINISHES.gold.rim.clone(), roughness: 0.32, metalness: 1 });
     this.finish = FINISHES.gold;
@@ -201,12 +224,32 @@ export class MirrorCube {
             group.add(rim);
           }
 
-          const cubie = { group, pos, quat: new THREE.Quaternion() };
+          const cubie = { group, pos, size, centre, home: pos.clone(), quat: new THREE.Quaternion(), center: Math.abs(x) + Math.abs(y) + Math.abs(z) === 1 };
+          group.userData.cubie = cubie; // lets a raycast hit find its piece
           this.core.add(group);
           this.cubies.push(cubie);
         }
       }
     }
+
+    // The mechanism inside: a hub with three axles. Hidden until the cube is pulled apart.
+    const mech = this.mechMat = new THREE.MeshStandardMaterial({ color: 0x3A302A, roughness: 0.4, metalness: 0.6 });
+    const hub = new THREE.Group();
+    hub.add(new THREE.Mesh(new THREE.SphereGeometry(0.36, 32, 20), mech));
+    for (const axis of ['x', 'y', 'z']) {
+      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.1, 20), mech);
+      if (axis === 'x') axle.rotation.z = Math.PI / 2;
+      if (axis === 'z') axle.rotation.x = Math.PI / 2;
+      hub.add(axle);
+      for (const side of [-1, 1]) {
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 24), this.rimMat);
+        cap.rotation.copy(axle.rotation);
+        cap.position[axis] = side * 1.06;
+        hub.add(cap);
+      }
+    }
+    this.hub = hub;
+    this.core.add(hub);
   }
 
   // Permanently turn one layer. sign = -1 undoes the move.
@@ -219,165 +262,134 @@ export class MirrorCube {
     }
   }
 
-  // Give every piece its own explosion: direction, distance, tumble and return delay.
-  // Returns how long the whole intro takes.
-  #planIntro() {
-    const r = () => Math.random() - 0.5;
+  // Each piece's parent (the neighbour one step closer to the core, which it splits off from),
+  // its generation, and the twist it makes on the way out
+  #planAssembly() {
     for (const c of this.cubies) {
-      c.burstDir = c.pos.clone().normalize().add(new THREE.Vector3(r(), r(), r()).multiplyScalar(0.9)).normalize();
-      c.burstDist = 2.5 + Math.random() * 1.3;
-      c.spinAxis = new THREE.Vector3(r(), r(), r()).normalize();
-      c.spinSpeed = (2.5 + Math.random() * 4) * (Math.random() < 0.5 ? -1 : 1);
-      c.pullDelay = Math.random() * IN_STAGGER;
-      // Each piece starts somewhere inside the bomb
-      c.burstStart = new THREE.Vector3(r(), r(), r()).multiplyScalar(0.6);
-    }
-    this.#buildBomb();
-
-    this.hangEnd = IN_FUSE + IN_BOOM + IN_HANG;
-    this.arriveAt = this.hangEnd + IN_STAGGER + IN_RETURN;
-    return this.arriveAt + IN_SNAP;
-  }
-
-  // A round black bomb with a cap, a rope fuse and a spark, plus the fireball and flash for the blast
-  #buildBomb() {
-    const bomb = this.bomb = new THREE.Group();
-    const shell = new THREE.MeshStandardMaterial({ color: 0x2B2521, roughness: 0.32, metalness: 0.55 });
-    bomb.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 48, 32), shell));
-
-    const cap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.28, 0.22, 24),
-      new THREE.MeshStandardMaterial({ color: 0x4A3E35, roughness: 0.5, metalness: 0.4 }),
-    );
-    cap.position.y = 0.92;
-    bomb.add(cap);
-
-    this.fuseCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 1.0, 0),
-      new THREE.Vector3(0.08, 1.3, 0.05),
-      new THREE.Vector3(0.32, 1.52, 0.1),
-      new THREE.Vector3(0.62, 1.5, 0.14),
-    ]);
-    this.fuseSegments = 48;
-    this.fuse = new THREE.Mesh(
-      new THREE.TubeGeometry(this.fuseCurve, this.fuseSegments, 0.04, 8),
-      new THREE.MeshStandardMaterial({ color: 0xC9A27A, roughness: 0.9 }),
-    );
-    bomb.add(this.fuse);
-
-    this.spark = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xFFD08A }),
-    );
-    this.sparkLight = new THREE.PointLight(0xFF9A50, 0, 6, 2);
-    bomb.add(this.spark, this.sparkLight);
-    this.object.add(bomb);
-
-    this.fireball = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 32, 24),
-      new THREE.MeshBasicMaterial({
-        color: 0xFFA868, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
-      }),
-    );
-    this.fireball.visible = false;
-    this.flash = new THREE.PointLight(0xFFB48A, 0, 14, 2);
-    this.object.add(this.fireball, this.flash);
-  }
-
-  // Where one piece is during the intro, given its settled position/rotation already in c.group
-  #introPiece(c, t) {
-    // Hidden inside the bomb until it blows
-    if (t < IN_FUSE) {
-      c.group.scale.setScalar(0);
-      return;
-    }
-
-    const finalPos = c.group.position.clone();
-    const drift = (time) => Math.max(0, time - (IN_FUSE + IN_BOOM)) * 0.35;
-    const spin = (time) => c.spinSpeed * (time - IN_FUSE);
-    const pullStart = this.hangEnd + c.pullDelay;
-    if (!c.fitted) this.#fitBurst(c, drift(pullStart));
-    const exploded = c.burstDir.clone().multiplyScalar(c.burstDist);
-
-    // Blast outward from inside the bomb, then drift while tumbling
-    if (t < pullStart) {
-      const k = easeOutExpo(clamp01((t - IN_FUSE) / IN_BOOM));
-      c.group.position.lerpVectors(c.burstStart, exploded, k).addScaledVector(c.burstDir, drift(t));
-      c.group.scale.setScalar(0.3 + 0.7 * clamp01(k * 1.4));
-      c.group.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(c.spinAxis, spin(t)));
-      return;
-    }
-
-    // Pulled back like a magnet: slow at first, then faster and faster into its slot
-    const e = easeInCubic(clamp01((t - pullStart) / IN_RETURN));
-    const from = exploded.addScaledVector(c.burstDir, drift(pullStart));
-    c.group.position.lerpVectors(from, finalPos, e);
-    c.group.scale.setScalar(1);
-    c.group.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(c.spinAxis, spin(pullStart) * (1 - e)));
-  }
-
-  // Shorten a piece's flight if its furthest point would leave the canvas
-  #fitBurst(c, maxDrift) {
-    c.fitted = true;
-    if (!this.camera) return;
-    const margin = 0.62; // keep piece centres within 62% of the canvas from its centre (pieces have size too)
-    const p = new THREE.Vector3();
-    for (let dist = c.burstDist; dist > 1.2; dist -= 0.1) {
-      p.copy(c.burstDir).multiplyScalar(dist + maxDrift);
-      this.core.localToWorld(p).project(this.camera);
-      c.burstDist = dist;
-      if (Math.abs(p.x) < margin && Math.abs(p.y) < margin) return;
+      const p = c.pos; // where it sits in the (already scrambled) cube
+      c.gen = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z); // 1 centre, 2 edge, 3 corner
+      const axes = ['x', 'y', 'z'].filter((a) => p[a] !== 0);
+      c.splitAxis = axes[Math.floor(Math.random() * axes.length)];
+      c.parentPos = p.clone();
+      c.parentPos[c.splitAxis] = 0;
+      c.splitTwist = (Math.random() < 0.5 ? -1 : 1) * Math.PI / 2;
+      c.growAt = IN_GEN[c.gen] + Math.random() * IN_STAGGER;
     }
   }
 
-  // The bomb, fireball, flash, shake and final squash
+  // The core's slam and bounce, then a squash, a flash and a kick as each generation lands
   #introWhole(t) {
-    // Bomb: pops in, fuse burns down with a flickering spark, swells and trembles, then vanishes
-    const lit = t < IN_FUSE;
-    this.bomb.visible = lit;
-    if (lit) {
-      const grow = easeOutBack(Math.min(1, t / 0.3)); // pops in with a slight overshoot
-      const swell = clamp01((t - (IN_FUSE - IN_SWELL)) / IN_SWELL);
-      this.bomb.scale.setScalar(0.5 * Math.max(0, grow) * (1 + 0.16 * swell * swell));
-      const a = 0.05 * swell * swell;
-      this.bomb.position.set(Math.sin(t * 90) * a, Math.cos(t * 77) * a, Math.sin(t * 63) * a);
+    const land = IN_DROP_START + IN_DROP;
+    const d = clamp01((t - IN_DROP_START) / IN_DROP);
+    this.hub.scale.setScalar(t < IN_DROP_START ? 0 : 0.6 + 0.4 * d);
+    this.hub.position.y = d < 1 ? 4 * (1 - d * d * d) : 0.3 * pulse(t - land, 0.26);
 
-      const left = 1 - 0.9 * (t / IN_FUSE); // how much fuse remains
-      const segs = Math.max(1, Math.round(this.fuseSegments * left));
-      this.fuse.geometry.setDrawRange(0, segs * 8 * 6);
-      const tip = this.fuseCurve.getPoint(segs / this.fuseSegments);
-      this.spark.position.copy(tip);
-      this.sparkLight.position.copy(tip);
-      const flicker = 0.7 + Math.random() * 0.7;
-      this.spark.scale.setScalar(flicker);
-      this.sparkLight.intensity = 3 * flicker;
-    }
-
-    // Fireball and flash of light
-    const sinceBoom = t - IN_FUSE;
-    const f = sinceBoom / IN_FIREBALL;
-    this.fireball.visible = f > 0 && f < 1;
-    if (this.fireball.visible) {
-      this.fireball.scale.setScalar(0.3 + 2.4 * easeOutCubic(f));
-      this.fireball.material.opacity = 0.85 * (1 - f) * (1 - f);
-    }
-    this.flash.intensity = sinceBoom > 0 ? 50 * Math.exp(-sinceBoom * 6) : 0;
-
-    // Shake on the blast
-    const shake = sinceBoom > 0 ? 0.12 * Math.exp(-sinceBoom * 9) : 0;
-    this.object.position.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
-
-    // Squash as the last piece locks in
-    const k = (t - this.arriveAt) / IN_SNAP;
-    const squash = k > 0 && k < 1 ? 0.06 * Math.sin(Math.PI * k) * (1 - k) : 0;
+    const hits = [land, IN_GEN[1] + IN_GROW * 0.75, IN_GEN[2] + IN_GROW * 0.75, IN_LOCK];
+    const power = [0.14, 0.07, 0.08, 0.13];
+    let squash = 0;
+    let flash = 0;
+    let shake = 0;
+    hits.forEach((at, i) => {
+      squash += power[i] * pulse(t - at, 0.22);
+      const since = t - at;
+      if (since > 0) {
+        flash += (i === 3 ? 60 : 22) * Math.exp(-since * 9);
+        shake += (i === 0 || i === 3 ? 0.09 : 0.03) * Math.exp(-since * 14);
+      }
+    });
     this.object.scale.set(1 + squash, 1 - squash, 1 + squash);
+    this.popLight.intensity = flash;
+    this.object.position.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
+  }
+
+  // One piece: hidden inside its parent, then pushed out with a twist, overshooting into its slot
+  #introPiece(c, t) {
+    const k = (t - c.growAt) / IN_GROW;
+    if (k <= 0) return c.group.scale.setScalar(0);
+    if (k >= 1) return c.group.scale.setScalar(1);
+    const slot = c.group.position.clone();
+    c.group.position.lerpVectors(c.parentPos, slot, snap(k));
+    c.group.scale.setScalar(0.15 + 0.85 * Math.min(1, easeOutCubic(k) * 1.15));
+    c.group.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(AXES[c.splitAxis], c.splitTwist * (1 - easeOutCubic(k))));
   }
 
   get introDone() { return this.introTime >= this.introLength; }
   get total() { return this.solution.length; }
   get isSolved() { return this.applied === this.total; }
 
+  // Pieces that would turn with a move on this layer
+  #inLayer(c, axis, layer) {
+    return Math.round(c.pos[axis]) === layer;
+  }
+
+  // Free play is anything the visitor did that the scroll solve does not know about
+  get freePlay() { return this.userMoves.length > 0 || this.twist !== null || this.anims.length > 0; }
+  get canTwist() { return this.introDone && this.celebration === Infinity && this.anims.length === 0; }
+
+  // Mid-way through a scroll move? Then layers are not lined up and nothing else may turn.
+  get atRest() {
+    const frac = this.progress - Math.floor(this.progress);
+    return frac === 0 || this.applied >= this.total || scrollEase(frac) === 0;
+  }
+
+  // The visitor drags a layer: angle in radians about +axis
+  setTwist(axis, layer, angle) {
+    this.twist = { axis, layer, angle };
+    this.draw();
+  }
+
+  // The visitor let go: settle on the nearest quarter turn, then make it permanent
+  releaseTwist(spin = 0) {
+    const t = this.twist;
+    if (!t) return;
+    const quarters = THREE.MathUtils.clamp(Math.round((t.angle + spin) / QUARTER), -2, 2);
+    this.twist = null;
+    this.anims.push({
+      axis: t.axis, layer: t.layer, from: t.angle, to: quarters * QUARTER, time: 0,
+      duration: 0.12 + 0.1 * Math.min(1, Math.abs(quarters * QUARTER - t.angle) / QUARTER),
+      done: () => {
+        for (let i = 0; i < Math.abs(quarters); i++) {
+          const move = { axis: t.axis, layer: t.layer, q: Math.sign(quarters) };
+          this.#apply(move, 1);
+          this.#recordUserMove(move);
+        }
+        if (quarters !== 0) this.onUserMove?.(this.userMoves.length, this.shapeSolved);
+      },
+    });
+  }
+
+  // Remember a free-play move, cancelling it against the last one if it undoes it
+  #recordUserMove(m) {
+    const last = this.userMoves[this.userMoves.length - 1];
+    if (last && last.axis === m.axis && last.layer === m.layer && last.q === -m.q) this.userMoves.pop();
+    else this.userMoves.push(m);
+  }
+
+  // Play the visitor's moves backwards, quickly, until the cube is where the scroll left it
+  undoUserMoves(each = 0.13) {
+    if (this.anims.length) return;
+    const step = () => {
+      const m = this.userMoves.pop();
+      if (!m) return this.onUndone?.();
+      this.anims.push({
+        axis: m.axis, layer: m.layer, from: 0, to: -angleOf(m), time: 0, duration: each,
+        done: () => { this.#apply(m, -1); step(); },
+      });
+    };
+    step();
+  }
+
+  // Every piece back home and facing the right way: a perfect box again
+  get shapeSolved() {
+    const eps = 1e-3;
+    return this.cubies.every((c) => c.pos.distanceToSquared(c.home) < eps &&
+      (c.center || Math.abs(c.quat.w) > 1 - eps));
+  }
+
   setProgress(p) {
+    // The scroll solve waits while the visitor plays, and until the cube has assembled
+    if (this.freePlay || !this.introDone) return this.draw();
     p = Math.min(Math.max(p, 0), this.total);
     this.progress = p;
     const whole = Math.floor(p);
@@ -385,9 +397,23 @@ export class MirrorCube {
     while (this.applied < whole) this.#apply(this.solution[this.applied++], 1);
     while (this.applied > whole) this.#apply(this.solution[--this.applied], -1);
 
-    const frac = p - whole;
-    const moving = frac > 0 && this.applied < this.total ? this.solution[this.applied] : null;
-    this.#render(moving, moving ? scrollEase(frac) : 0);
+    this.draw();
+  }
+
+  // The layer that is turning right now, if any: { axis, layer, angle }
+  get #turning() {
+    if (this.twist) return this.twist;
+    const a = this.anims[0];
+    if (a) {
+      const k = clamp01(a.time / a.duration);
+      return { axis: a.axis, layer: a.layer, angle: a.from + (a.to - a.from) * easeOutCubic(k) };
+    }
+    const frac = this.progress - Math.floor(this.progress);
+    if (frac > 0 && this.applied < this.total) {
+      const m = this.solution[this.applied];
+      return { axis: m.axis, layer: m.layer, angle: angleOf(m) * scrollEase(frac) };
+    }
+    return null;
   }
 
   // ---------- Theatre ----------
@@ -421,12 +447,31 @@ export class MirrorCube {
       this.celebration += dt;
       if (this.celebration > CELEBRATION_LENGTH) this.celebration = Infinity;
     }
+    const a = this.anims[0];
+    if (a) {
+      a.time += dt;
+      if (a.time >= a.duration) {
+        this.anims.shift();
+        a.done(); // may queue the next one
+      }
+    }
   }
 
   // Draw every piece: its settled place, plus the layer that's mid-turn
-  #render(moving, amount) {
+  draw() {
+    const intro = !this.introDone;
+    if (intro) this.#introWhole(this.introTime);
+    else if (!this.introCleaned) {
+      this.introCleaned = true;
+      this.object.scale.setScalar(1);
+      this.object.position.set(0, 0, 0);
+      this.popLight.intensity = 0;
+      this.hub.position.set(0, 0, 0);
+      this.hub.scale.setScalar(1);
+    }
+    const moving = this.#turning;
     const partial = moving
-      ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], angleOf(moving) * amount)
+      ? new THREE.Quaternion().setFromAxisAngle(AXES[moving.axis], moving.angle)
       : null;
 
     // Victory flourish: the top layer tips open on a hinge along its far edge
@@ -454,18 +499,10 @@ export class MirrorCube {
       };
     }
 
-    if (!this.introDone) this.#introWhole(this.introTime);
-    else if (this.bomb.parent) {
-      // Intro finished: reset and remove the bomb and effects for good
-      this.object.position.set(0, 0, 0);
-      this.object.scale.setScalar(1);
-      this.object.remove(this.bomb, this.fireball, this.flash);
-    }
-
     for (const c of this.cubies) {
       c.group.position.copy(c.pos);
       c.group.quaternion.copy(c.quat);
-      if (moving && Math.round(c.pos[moving.axis]) === moving.layer) {
+      if (moving && this.#inLayer(c, moving.axis, moving.layer)) {
         c.group.position.applyQuaternion(partial);
         c.group.quaternion.premultiply(partial);
       }
@@ -476,12 +513,10 @@ export class MirrorCube {
         c.group.quaternion.premultiply(lid.turn);
       }
 
-      // Intro: the big bang
-      if (!this.introDone) {
-        this.#introPiece(c, this.introTime);
-      } else if (c.group.scale.x !== 1) {
-        c.group.scale.setScalar(1);
-      }
+      // Exploded view: every piece slides straight out from the core
+      if (this.explode > 0) c.group.position.multiplyScalar(1 + 0.42 * this.explode);
+      if (intro) this.#introPiece(c, this.introTime);
+      else c.group.scale.setScalar(1);
     }
   }
 }

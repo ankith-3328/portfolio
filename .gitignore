@@ -17,3 +17,7 @@ uv.lock
 .DS_Store
 .playwright-mcp/
 .vercel/
+
+# Build
+node_modules/
+dist/
